@@ -1,0 +1,52 @@
+# mc-remote-unity-sandbox
+
+`mc-remote-unity-sandbox`は、Minecraft Remoteの箱庭をUnityで作るrepositoryです。一般用途のC# Client Library
+（`minecraft-remote-csharp`）とは別の成果物です。
+
+## McRemote SSOT
+
+McRemote 固有の設計判断の正本は GitHub 上の `Naohiro2g/mc-remote-knowledge` です。
+
+McRemote 固有文脈に依存する作業に入る前に、agent はその SSOT リポジトリの関連文書を
+必ず読んでください。対象には architecture / protocol / deployment / contributor workflow /
+learning design、および McRemote 固有の判断理由に依存する挙動変更が含まれます。
+
+最初に、knowledge リポのリモート `main` から最新の dev agent runtime protocol だけを取得して
+指示として読んでください。取得元ファイル全体を会話へ出力してはいけません。
+
+```bash
+protocol_source="$(mktemp)"
+knowledge_commit="$(gh api repos/Naohiro2g/mc-remote-knowledge/commits/main -q .sha)"
+gh api "repos/Naohiro2g/mc-remote-knowledge/contents/00-hub/dev-repo-protocol_ja.md?ref=$knowledge_commit" \
+  -q .content | base64 -d > "$protocol_source"
+if [ "$(grep -Fxc '<!-- BEGIN: DEV-AGENT-RUNTIME -->' "$protocol_source")" -ne 1 ] || \
+   [ "$(grep -Fxc '<!-- END: DEV-AGENT-RUNTIME -->' "$protocol_source")" -ne 1 ]; then
+  echo "dev agent runtime marker missing or duplicated" >&2
+  exit 1
+fi
+printf 'knowledge commit: %s\n' "$knowledge_commit"
+awk '/^<!-- BEGIN: DEV-AGENT-RUNTIME -->$/{reading=1;next} \
+     /^<!-- END: DEV-AGENT-RUNTIME -->$/{reading=0} \
+     reading' "$protocol_source"
+```
+
+SSOT リポジトリへアクセスできない場合は、作業を止め、その旨を明示してください。この
+リポジトリ単体、assistant memory、過去会話、ローカル推論から欠けた文脈を補完してはいけません。
+SSOT にアクセスできるまで、McRemote 固有文脈に依存する設計判断や実装を進めないでください。
+
+このファイルは SSOT を複製しません。複製はドリフトを生みます。
+
+- このリポの関連スポーク: 19-unity/, 18-csharp-client/, 10-protocol/
+
+## このリポ固有の指示
+
+- Unity Editorの版は、knowledgeの`19-unity/README_ja.md`の「現在地」に従い、使った版を記録する。
+- 一般用途のC# Client Library（`Naohiro2g/minecraft-remote-csharp`）の`src/`を直接参照しない。公開された形で使う。
+- Minecraft（Mojang）のtexture、model、音などの素材をcommitしない。自作か、licenseが明確で再配布できる素材だけを使い、
+  出どころを記録する。
+- Unityの`Library/`、build成果物など、生成されるものをcommitしない。
+- Protocolやwire formatに触れる前に`10-protocol`、このrepositoryの作業では`19-unity`を読む。
+- 配布、公開の配信、release workflowは、knowledge SSOTで決まるまで足さない。
+- token、private endpoint、credential、operator-localの設定をcommitしない。
+- 横断する発見はlocalの`NOTES_ja.md`へ一時捕捉し、session／sliceの終わりにknowledge hubへ上げる。
+- 自分が編集したpathだけを明示stageする。
