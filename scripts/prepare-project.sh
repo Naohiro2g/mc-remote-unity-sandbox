@@ -2,38 +2,33 @@
 set -euo pipefail
 
 if [[ $# -ne 1 || ! -x "$1" ]]; then
-  echo '使い方: bash prepare-project.sh /Unity/Editor/Unity' >&2
+  echo '使い方: bash scripts/prepare-project.sh /Unity/Editor/Unity' >&2
   exit 2
 fi
 
 unity_editor="$1"
-demo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-project_dir="$demo_dir/.local/UnityProject"
-mkdir -p "$demo_dir/.local"
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+project_dir="$repo_dir/unity"
+log_dir="$repo_dir/.local/logs"
+mkdir -p "$log_dir"
 
-run_unity() {
-  local log_path="$1"
-  shift
-  if ! "$unity_editor" "$@" -logFile "$log_path"; then
-    tail -n 50 "$log_path" >&2
-    return 1
-  fi
-}
-
-if [[ ! -f "$project_dir/ProjectSettings/ProjectVersion.txt" ]]; then
-  if [[ -d "$project_dir" ]] && [[ -n "$(ls -A "$project_dir")" ]]; then
-    echo "未完成のプロジェクトがあります。中身を確認してください: $project_dir" >&2
-    exit 1
-  fi
-  run_unity "$demo_dir/.local/create.log" -batchmode -nographics -quit -createProject "$project_dir"
+# Assets / Packages / ProjectSettingsを追跡する正式なProjectを直接使う。
+# 編集元のコピーや、利用者が編集したシーンの再生成は行わない。
+if [[ ! -f "$project_dir/ProjectSettings/ProjectVersion.txt" || ! -f "$project_dir/Assets/LocalSandboxDemo/Scenes/LocalSandboxDemo.unity" ]]; then
+  echo 'Unity Projectの設定またはデモシーンがありません。cloneした内容を確認してください。' >&2
+  exit 1
 fi
 
-# 編集元はこのリポのAssets。生成先で同じファイルを編集した場合は上書きする。
-cp -R "$demo_dir/Assets/LocalSandboxDemo" "$project_dir/Assets/"
-cp "$demo_dir/Assets/LocalSandboxDemo.meta" "$project_dir/Assets/LocalSandboxDemo.meta"
-run_unity "$demo_dir/.local/scene.log" -batchmode -nographics -quit -projectPath "$project_dir" \
-  -executeMethod Code2Create.UnitySandbox.LocalDemo.DemoEditor.CreateScene
+if ! "$unity_editor" -batchmode -nographics -quit -projectPath "$project_dir" \
+  -executeMethod Code2Create.UnitySandbox.LocalDemo.DemoEditor.Validate -logFile "$log_dir/prepare.log"; then
+  tail -n 50 "$log_dir/prepare.log" >&2
+  exit 1
+fi
+if ! grep -q 'LOCAL_SANDBOX_VALIDATION_PASS' "$log_dir/prepare.log"; then
+  echo "検証の成功を確認できません: $log_dir/prepare.log" >&2
+  exit 1
+fi
 
-echo "Unity Hubで次のプロジェクトを追加して開いてください:"
+echo 'Unity Hubで次のプロジェクトを追加して開いてください:'
 echo "$project_dir"
-echo "作成されたLocalSandboxDemoシーンを開き、Playで開始します。"
+echo 'LocalSandboxDemoシーンを開き、Playで開始します。'

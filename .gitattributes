@@ -1,0 +1,4 @@
+# UnityのYAMLは空値の末尾に空白を出力するため、その書式を保持する。
+unity/**/*.asset text eol=lf whitespace=-blank-at-eol
+unity/**/*.unity text eol=lf whitespace=-blank-at-eol
+unity/**/*.meta text eol=lf whitespace=-blank-at-eol

@@ -216,7 +216,7 @@ Python / Scratch / C#
 | 公開箱庭の到達形 | 400×400、9区画、学習用ブロック、4建築操作、足・照準の表示、共有状態とリセット |
 | 後続 | 正式な手作業での設置・破壊、手作業とコードを行き来する教材、TNTの追加挙動など |
 
-一般用途C# clientの実装順はknowledgeの多言語ロードマップに従います。G/H/Iの並行開始を含む進行の具体化と、Unity内部の準備を分けます。共有world serverの実装ownerとrepo配置は未決です。
+一般用途C# clientの実装順はknowledgeの多言語ロードマップに従います。G/H/Iの並行開始を含む進行の具体化と、Unity内部の準備を分けます。共有world serverと世界のモデルは後で本repoへ置きます。具体的な実装は後続です。
 
 ## 11. 実装形態の案：箱庭サーバーとUnity Web
 
@@ -273,7 +273,7 @@ ScratchとUnityを同じ画面へ並べる場合も、Scratch VMへUnityの世�
 
 Unity Webを`file://`で直接開く導線にはしません。PC1台でもHTTPサービスから読み込みます。Web配信ではWASMのMIME typeと圧縮headerをUnityのbuild設定へ合わせ、異なる版のloader・WASM・dataを混ぜないようにします。
 
-一般用途C# Client Libraryは引き続き送り手のlibraryです。箱庭サーバーの責務をこのlibraryへ追加せず、libraryの`netstandard2.1`や根のnamespaceも変更しません。サーバー側の共通C#モデルとUnity Projectを同じ開発repoへ置く案はありますが、ownerと配置先はknowledgeで確定します。
+一般用途C# Client Libraryは引き続き送り手のlibraryです。箱庭サーバーの責務をこのlibraryへ追加せず、libraryの`netstandard2.1`や根のnamespaceも変更しません。Unity Projectは本repoの`unity/`に置き、後で箱庭サーバーと世界のモデルも本repoへ加えます。具体的な共有方式と契約は後続で決めます。
 
 ## 12. 影響を二つの新componentへ限定できるか
 

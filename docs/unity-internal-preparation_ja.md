@@ -2,7 +2,7 @@
 
 更新日: 2026-10-26。公開共有箱庭の[全体設計](unity-shared-sandbox-draft_ja.md)から、共通ProtocolやClient Libraryの実装を先取りしない作業を切り出します。
 
-通信なしの最初の試作を[experiments/unity-local-demo](../experiments/unity-local-demo/README_ja.md)に置きました。6材質、列・柱・壁・階段、地面と区画ガイド、歩行・照準・ローカル座標表示を用意しています。座標と配置更新の自動検証、材質比較の描画確認まで行い、人による操作感の観察とWebへの書き出しはこれからです。
+通信なしの最初の試作を[ローカル建築デモ](local-demo_ja.md)に置きました。6材質、列・柱・壁・階段、地面と区画ガイド、歩行・照準・ローカル座標表示を用意しています。座標と配置更新の自動検証、材質比較の描画確認まで行い、人による操作感の観察とWebへの書き出しはこれからです。
 
 ## 1. 先行作業の目的
 
@@ -133,7 +133,7 @@ D/E/Fを進め、G/H/Iを並行に近い形で始める可能性は検討中で�
 
 最初の区切りは、通信なしで「草の地面に学習用のブロックを並べ、歩いて数え、足と照準の座標を読む」シーンです。Web buildもこの小さなシーンから試し、400×400の世界を多数のブロックで埋める負荷試験とは分けます。
 
-成果物は、Unity用の作業場所で作るasset・scene・内部スクリプトと、観測した条件/結果です。Unity用repoやpackageの配置は未決です。一般用途C# libraryの`src/`へUnity依存を加えず、server projectやNuGet/release設定も先行作業には含めません。
+成果物は、Unity用の作業場所で作るasset・scene・内部スクリプトと、観測した条件/結果です。Unity Projectは本repoの`unity/`に置きます。C# Client Libraryの配布形式は未決です。一般用途C# libraryの`src/`へUnity依存を加えず、server projectやNuGet/release設定も先行作業には含めません。
 
 ## 6. 共通化の入力を待つ部分
 
@@ -172,4 +172,4 @@ D/E/Fを進め、G/H/Iを並行に近い形で始める可能性は検討中で�
 - [Unity Webの性能上の考慮点](https://docs.unity.com/en-us/engine/6000.3/manual/platform-specific/webgl/develop/performance)
 - [Unity Webのbuild設定](https://docs.unity.com/en-us/engine/6000.3/manual/platform-specific/webgl/building-distribution/web-build-settings)
 
-先行試作のソースと準備手順は上記フォルダーに置きます。Unity Projectの生成先は無視対象のローカル領域です。正式なUnity用repo/packageの配置、Web build、通信との連携は未決・未実施です。
+先行試作のソースは`unity/Assets/LocalSandboxDemo`、準備スクリプトは`scripts/prepare-project.sh`に置きます。Unity ProjectのAssets・Packages・ProjectSettingsを追跡します。Web buildと通信との連携は後続です。

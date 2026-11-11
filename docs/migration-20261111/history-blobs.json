@@ -1,0 +1,242 @@
+[
+  {
+    "git_blob": "ac3e5b96917e13edb8f731cc6e748866b5ea0e89",
+    "bytes": 4595,
+    "sha256": "bc6f0c53f14e51cb4ad7b03e3a1676749e042d13a20c604b58f5a8fd846606bc",
+    "path": "docs/diagrams/unity-shared-sandbox-connections.svg"
+  },
+  {
+    "git_blob": "eada2bd2ebb3efd468d7c5758e8972e85a3a3106",
+    "bytes": 8820,
+    "sha256": "cb917daba8eb4e1149fca22d9eb9b9474ee44b5004f2aae5c557e1ebeead75b9",
+    "path": "docs/diagrams/unity-shared-sandbox-layout.svg"
+  },
+  {
+    "git_blob": "72b3b2ed254e9b39b25ed6d8d8e6dcc35dbfbc95",
+    "bytes": 5395,
+    "sha256": "236aa7bea71ecae79f7433613e6c9dbcadc0686d7a9ba11d27e1ecd98e4bcf3c",
+    "path": "docs/diagrams/unity-shared-sandbox-runtime.svg"
+  },
+  {
+    "git_blob": "7dfe4f099ea984503d0f56b6245ed46a2c35fb85",
+    "bytes": 18852,
+    "sha256": "5f14d03621520a87189a33ff6a9872920014491be37fb576cacfbbfba338e0be",
+    "path": "docs/unity-internal-preparation_ja.md"
+  },
+  {
+    "git_blob": "157eee6aa917932d059f626eb562e3ddd4584149",
+    "bytes": 39532,
+    "sha256": "2981f8e223f6b1f8290448eea8b7dc471e4761df3f3a332c91752315d223b48a",
+    "path": "docs/unity-shared-sandbox-draft_ja.md"
+  },
+  {
+    "git_blob": "a47f082c7ddadd57401e29bc2ff2294895aa1ad6",
+    "bytes": 8,
+    "sha256": "01c9c7cf0f94237049af1ffb52110b959311cb4afe36ae333e2436a09ff1cddf",
+    "path": "experiments/unity-local-demo/.gitignore"
+  },
+  {
+    "git_blob": "9889533db012f53a32a8de137078bfbf843c47c3",
+    "bytes": 169,
+    "sha256": "0b3f019f62bacfeb945cbc09c12c78a952a619ba8014152bfcb3c6ccf6df2e69",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo.meta"
+  },
+  {
+    "git_blob": "aa8af401b1b96be733d6e7cd0250a71efe48448c",
+    "bytes": 169,
+    "sha256": "a041d92a836be8180c39dd88372c40d64bf40866e3f6f11ceced08a70d73cf59",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Editor.meta"
+  },
+  {
+    "git_blob": "2f0c9717452baa094619dd9ebcc8c535b8d60d53",
+    "bytes": 205,
+    "sha256": "ab6dde4e61fbbfe3bde17acc8b49e26656c333a600106bc7bffa6f01c3c904b4",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Editor/Code2Create.UnitySandbox.LocalDemo.Editor.asmdef"
+  },
+  {
+    "git_blob": "26fe26c523f312f76ee5871d58463a1d3e36760d",
+    "bytes": 163,
+    "sha256": "29520799b48be7aeea0c7caa0c3dcffda4bbd364454e86c8c0504d95ec28b454",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Editor/Code2Create.UnitySandbox.LocalDemo.Editor.asmdef.meta"
+  },
+  {
+    "git_blob": "65be9aef9d8458ef22c7049e22726b9d9fb1d0dd",
+    "bytes": 6936,
+    "sha256": "d199f23b8ba0f19c3eebc2ddf4d74e6f9f7616ce7c45078b1d74f2cb4158527d",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Editor/DemoEditor.cs"
+  },
+  {
+    "git_blob": "9ce0c9b114268fbfa19a6d84608e6e0916bd2c0e",
+    "bytes": 60,
+    "sha256": "e63dc4288b20b09d181ed6dababfe00755b1271be971679dfb36e6764fac4d29",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Editor/DemoEditor.cs.meta"
+  },
+  {
+    "git_blob": "8cf2b97172730de2aedf216e84e678839fc4c6cb",
+    "bytes": 3592,
+    "sha256": "ac8f478ac995551ba01e9197ac8ea64c2c24135ba0c8b790e507507cb2afb9bf",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Editor/DemoPlaySmoke.cs"
+  },
+  {
+    "git_blob": "acc672a228af781c95a1ba42a79c164331d2e8ab",
+    "bytes": 60,
+    "sha256": "c91dfe2cb3ed05accab2b27e19c8a1f1f38a5122af059a53c1911160df642205",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Editor/DemoPlaySmoke.cs.meta"
+  },
+  {
+    "git_blob": "34e0208645f09fdf6700fafd8f8bd339588ff051",
+    "bytes": 169,
+    "sha256": "77d911fcf94c94c64e0ea7edb1db7058d07be16efaac1d284e95550d7603d1de",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime.meta"
+  },
+  {
+    "git_blob": "ced3c75f77f171f244503764fe61e4c5966b7eef",
+    "bytes": 108,
+    "sha256": "5e3f05efb5caaf6f89ab1dab5d0303a14c67fda01864b943842839d6d6d3a2e6",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/Code2Create.UnitySandbox.LocalDemo.asmdef"
+  },
+  {
+    "git_blob": "bcdd3d3bc29100af17863489835325a716de30e7",
+    "bytes": 163,
+    "sha256": "6126c3e4be449349863b1f2380c11a5e682cc0de2032fcaa6c8ed80a393e060c",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/Code2Create.UnitySandbox.LocalDemo.asmdef.meta"
+  },
+  {
+    "git_blob": "e034d6a45c1597a27ad2542c0f5134f22349a50b",
+    "bytes": 2246,
+    "sha256": "75d1e46f86bc00a19198d89919b2c869b0b2514bd1d1c19e227ffd7ea8459023",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/DemoBlocks.cs"
+  },
+  {
+    "git_blob": "92770ce8469f761f5afa1a03504c815288d41040",
+    "bytes": 60,
+    "sha256": "7b820f84b5af4cf0d9d66b6be4998dfe97209b94705e2234c2ffcd8d291fa1a4",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/DemoBlocks.cs.meta"
+  },
+  {
+    "git_blob": "2240db29427afaf06d02619dff48709275e50b3c",
+    "bytes": 969,
+    "sha256": "960ab4658bb2be79ca06a7e3f43427bb4194f3e9d8d30ceeeb48923db3146f58",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/DemoCoordinates.cs"
+  },
+  {
+    "git_blob": "13cd4fc5e087c50bbb3e22531a0ded90a25f1339",
+    "bytes": 60,
+    "sha256": "3172dda8a74398de0f24c28d6bfbd367350dffeb3719aad7ba09ce5bac8aeea5",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/DemoCoordinates.cs.meta"
+  },
+  {
+    "git_blob": "11c906aa388c1acab7682a4509e773965dce469d",
+    "bytes": 3654,
+    "sha256": "a4b37ad1a40d7e142312fa78f2f572bda9f45be99289276b9dd5b989e973269a",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/DemoPalette.cs"
+  },
+  {
+    "git_blob": "0d77ef9c597514859301be937fa805fd69822fdd",
+    "bytes": 60,
+    "sha256": "4b3063fa52efe29917e0f4f155889aa67f81547d4915ff6e0eb1dbb5d9827277",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/DemoPalette.cs.meta"
+  },
+  {
+    "git_blob": "f762571556e2c72c3fc266f6814038e7f601ceee",
+    "bytes": 7993,
+    "sha256": "a71cb787445953d4bc021e02df54691946c6af52177b938f0ae137b90f7880d7",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/LocalSandboxDemo.cs"
+  },
+  {
+    "git_blob": "ea062cb0e7e1dedd9ea794e4298b4592d50dbea5",
+    "bytes": 60,
+    "sha256": "80c38179d87fa84a187bf1f6c5e70915d73c847faa08f3a989e31e7c65817a82",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/LocalSandboxDemo.cs.meta"
+  },
+  {
+    "git_blob": "4cfcc5c87a0579a935487e2ea77a7861c8c46038",
+    "bytes": 3113,
+    "sha256": "440979df595c2f5e6876d365bea845c1ff7f77b54dccbb94a19228511b2232b7",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/LocalSandboxWalker.cs"
+  },
+  {
+    "git_blob": "66e3453623b65e5063c13dbbb1eb1156df2a7cdc",
+    "bytes": 60,
+    "sha256": "fce8c9d357c1cce59589fbfcdf9cde706b591208b2315c56cccc58544073871e",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/LocalSandboxWalker.cs.meta"
+  },
+  {
+    "git_blob": "ab3bf138c0f5505bdb4d104c3d5723ece23235b8",
+    "bytes": 7916,
+    "sha256": "04cbce44e6cccf6560a3143038792c60bb9237facf8408ba47b1e241ff0b0b4d",
+    "path": "experiments/unity-local-demo/README_ja.md"
+  },
+  {
+    "git_blob": "f59ecf39c412ffd9cf3a80cdd7455cd1016cbfd6",
+    "bytes": 140055,
+    "sha256": "956dc3e77d8c764c6be3656533ad3d1afd5984c7e150d4aa100f2c91bf02fbf9",
+    "path": "experiments/unity-local-demo/images/brp-walls-stairs-play.png"
+  },
+  {
+    "git_blob": "fee60c51262f9d6844943b62a45a288e26dbc6bc",
+    "bytes": 304222,
+    "sha256": "c5ae7a1dcadd23642e2f24a8c04ed51d6ecce50b10cb64d4b1a0189135f8c76d",
+    "path": "experiments/unity-local-demo/images/material-preview.png"
+  },
+  {
+    "git_blob": "4fdbbaf0b5c1b61cde821017b56939e6e0b0b6dd",
+    "bytes": 3848,
+    "sha256": "d2b04d4c58a926c46b1ae6309666bf1a30b53eb6e46eb42e02851f4e9a7f06a0",
+    "path": "experiments/unity-local-demo/observations_ja.md"
+  },
+  {
+    "git_blob": "848f5e4e93553c5a80ce11a5b9b9c293c716e81f",
+    "bytes": 1461,
+    "sha256": "c439a277d01316f160d6de3c114c7de1c6bb25b94ba8251ba3a163abedb02773",
+    "path": "experiments/unity-local-demo/prepare-project.sh"
+  },
+  {
+    "git_blob": "6298800a4acbecf7ea87408f76af19cf1e469281",
+    "bytes": 3477,
+    "sha256": "0b6cd6ce6c26403631796cd5d7f68eb778c443e4c967da6ed079d0ede95bbaf5",
+    "path": "experiments/unity-local-demo/observations_ja.md"
+  },
+  {
+    "git_blob": "2b691f1424f7b892580261a78d888552dddfe372",
+    "bytes": 3324,
+    "sha256": "c405d8fcd6bfc5ed0d4472bbebb4d87431b6b022d8c7fae1a79a60358897c407",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Editor/DemoPlaySmoke.cs"
+  },
+  {
+    "git_blob": "5674b02389517c6105e093021e370173818af1b2",
+    "bytes": 7725,
+    "sha256": "bb60f604737a77b0a4ee22407822ba8e3c86b1f6bb6996cdea6366614586aad1",
+    "path": "experiments/unity-local-demo/Assets/LocalSandboxDemo/Runtime/LocalSandboxDemo.cs"
+  },
+  {
+    "git_blob": "5fd1d2f16994179f07cd897aa9002df02671d5cc",
+    "bytes": 7946,
+    "sha256": "21094f98c9cac8dc001f05376f7ab07924d1ee9b5d301a13d349d8e7c49e0b60",
+    "path": "experiments/unity-local-demo/README_ja.md"
+  },
+  {
+    "git_blob": "8512c46cd68f7e2613fb5936e004b82e3a725f24",
+    "bytes": 2172,
+    "sha256": "e9b9b0cf254977b2fc577df0d1ea24471ce7180ad6592f59e38a4fbe25c3c0b0",
+    "path": "experiments/unity-local-demo/observations_ja.md"
+  },
+  {
+    "git_blob": "8f4520de061fdda5fd9f725c790054f155f5b451",
+    "bytes": 18347,
+    "sha256": "d604cf19a6e644d3c6384f6aec6762a670fcf03cf1389a77f16ebae46bece600",
+    "path": "docs/unity-internal-preparation_ja.md"
+  },
+  {
+    "git_blob": "1658cbeb0788761e443b3441b8e9d46df973f816",
+    "bytes": 16583,
+    "sha256": "07c109346799698d46dd534cc94890048166fc3b4c9a6923b2a52cc967ddabac",
+    "path": "docs/unity-internal-preparation_ja.md"
+  },
+  {
+    "git_blob": "d26fa4db54f366c9040e1f79d6ad1b2f33ede66a",
+    "bytes": 37870,
+    "sha256": "c1add59b247cb32e5e4a465d87c127f248b51099f4d6d89733ad6aa935e699fd",
+    "path": "docs/unity-shared-sandbox-draft_ja.md"
+  }
+]

@@ -26,6 +26,17 @@
 
 ユーザー提供のスクリーンショット。壁・階段の場面を歩いて見た状態で、ブロックの境界と足の座標表示を確認できる。
 
+## 2026-11-11 repo移行後の再検証
+
+- Unity：**6000.6.8f1 (237b6593792b)**、Linux、Built-in Render Pipeline、Input Manager。Unity公式APIで6.6の修正版を確認し、Editor配布物のbytesと公式integrityを照合した。
+- `unity/`にAssets・Packages・ProjectSettingsとデモシーンを置いた。元の生成済みProjectを上書きせず、新しいProjectで確認した。
+- 準備script：repoのrootで`bash scripts/prepare-project.sh "$UNITY_EDITOR"`を実行し、終了0。コンパイルと`LOCAL_SANDBOX_VALIDATION_PASS`を確認。
+- `unit/deterministic`：負の座標、相対座標、区画原点、地面・足、6面の照準、置換・除去、120個／150個の場面切り替えをPASS。再現コードは`unity/Assets/LocalSandboxDemo/Editor/DemoEditor.cs`。
+- Play Mode：Assets・Packages・ProjectSettingsをコピーした独立の検証Projectで、READMEの`DemoPlaySmoke.Run`を実行。終了0、`LOCAL_SANDBOX_PLAY_SMOKE_PASS`。初期化、足y=63、1単位の歩行、地面との衝突、目の高さをPASS。検索索引の例外も発生しなかった。再現コードは`DemoPlaySmoke.cs`。
+- 描画：仮想画面、OpenGL、llvmpipe (LLVM 20.1.2)で`DemoEditor.CapturePreview`を実行し、終了0。1440×900の画像を目視し、6材質、10個の列／柱、地面・区画線が移行前の比較画像と同じ場面として描画されることを確認。画像の完全一致や実機性能の保証ではない。
+- 既存Runtime／EditorのC#コードと旧画像はbytesを保持。試用中の旧`.local/UnityProject`は変更していない。
+- 今回はagentによるローカル再検証で、人による新たな試用、Web build、URP、タブレット、通信／共有状態同期は未検証。
+
 ## 次の観察を記録する欄
 
 - 日付・端末・OS・Unity／ブラウザの版：
