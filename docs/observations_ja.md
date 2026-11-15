@@ -39,6 +39,87 @@
 
 ## 次の観察を記録する欄
 
+## 2026-11-14 順番 1〜3（世界のモデル・ローカル WebGL・表示同期サーバー）の検証
+
+- ナレッジ参照コミット：`451988d9cf55cfa0f13f4a1b00dc1983274b719d`（`2026-11-14-01`, `2026-11-14-02` 反映）
+- Unity：**6000.6.8f1 (237b6593792b)**、Linux、Built-in Render Pipeline、Input Manager、WebGL
+- .NET テスト：`dotnet test server/Code2Create.UnitySandbox.sln` で全 **14/14** ケース通過（初期地形 `y=62`草・`61..60`土・`59..-64`石＋`x0`層イースターエッグ、基本10ブロックと拡張性、`world.setBlock`/`world.getBlock`/`world.setBlocks`/`chat.post`、高さ・水平両方の世界外 `out_of_bounds` と `setBlocks` の原子性、`32,768` 体積上限 `work_limit_exceeded`、WebSocket `/ws/sync` 接続・`/mcremote pair NNN-NNN` 承認・世界リセット時の紐付け維持・ペアリング試行レート制限・`viewerId` 非露出）。
+- Unity 検証（WebGL 用修正後）：`DemoEditor.Validate`（`LOCAL_SANDBOX_VALIDATION_PASS`、土の掘り起こし追加確認含む）および `DemoPlaySmoke.Run`（`LOCAL_SANDBOX_PLAY_SMOKE_PASS`）ともに終了 0。
+- WebGL ビルド・ブラウザ検証：`DemoEditor.BuildWebGL` により `unity/Builds/WebGL`（`26,387,289` bytes、圧縮なし）を生成し、`Code2Create.UnitySandbox.Server` の静的配信＋`/ws/sync` と headless Chrome（SwiftShader WebGL 2.0）で検証（`Errors count: 0`、`connections: 1`）。
+  - 途中のブラウザ検証で WebGL の IL2CPP ストリッピングにより `BoxCollider` が欠落し床をすり抜ける問題と、`index.html` の固定キャンバスによる横並び狭幅表示（`640x800`）での見切れを検出・修正（`link.xml`・`BoxCollider` 明示参照・レスポンシブ CSS 埋め込み）。修正後の再検証で `1280x720`・`640x800` とも日本語 UI（`NotoSansJP-Subset.ttf`、`SIL Open Font License 1.1`、`4,947,692` bytes）、区画8の3Dラベル、スナップショット受信表示（`[同期] スナップショットを受信しました (地域 0件)`）を確認。
+- 残る確認：実際の人間による操作感・Scratch LAN パッケージおよび順番 4（TCP JSON-RPC 口）と組み合わせた一気通貫のブロック配置確認。
+
+## 2026-11-14 順番 4（TCP JSON-RPC 2.0 受付・pairing・12 メソッド実装）の検証
+
+- ナレッジ参照コミット：`451988d9cf55cfa0f13f4a1b00dc1983274b719d`（`2026-11-14-01`, `2026-11-14-02`, `10-protocol/wire-format-design_ja.md`, `10-protocol/versioning-design_ja.md`, `minecraft-remote-tooling` F1/events fixture 照合）
+- .NET テスト：`dotnet test server/Code2Create.UnitySandbox.sln --no-restore` で全 **18/18** ケース通過（0 警告、0 エラー、所要 4.00 秒）。
+  - pre-hello ゲート（`expected_hello` 応答と TCP 切断）、`hello` の semver 互換検証（`protocol_required` / `protocol_mismatch`）および token エラー（`auth_required` / `token_not_found` / `token_invalid` / `token_expired`）と `unknown_dimension` 拒否
+  - Bridge 相当の別 TCP 接続を跨ぐ `auth.pairBegin` → pending `auth.pairPoll` → Unity Web `/ws/sync` での `/mcremote pair NNN-NNN` 承認 → `auth.pairPoll` token 取得と再利用防止（`pair_not_found`）→ token 付き `hello`（既定原点 `[0, 0, 0]`, `mc_version: "1.21.11"`, `server: "unity-sandbox"`, `world_constants: { "y_sea": 62 }`, `viewerId` とは別の UUID `player`）
+  - `catalog.get`（10 ブロック＋SHA-256 `catalogHash` 一致）、`events.poll`（空応答と不正パラメータ拒否）、`build.setOrigin` / `build.setDimension`（`/ws/sync` `streamUpdated` 同期）、FAST notification での `world.setBlock` / `world.setBlocks` ＋ `connection.flush` バリア（`blockDelta` ライブ配信と `out_of_bounds` 拒否）、`chat.post`（`chat` ライブ配信）、未対応メソッドの `method_not_found`、および `world.Reset()` 後の token／画面紐付け維持を確認。
+- 確認した補足事項：
+  - `Naohiro2g/McRemote`（`main`）の `RemoteSession.java` を確認したところ、現時点では `hello` 応答に `"server"` キーを入れていなかったため、`wire-format-design_ja.md` §6.2 および F1 fixture（`"server": "fixture-server"`）に揃えて文字列 `"unity-sandbox"` を返す形に実装した（McRemote 側の形式が確定・変更された場合は追従可能）。
+- 残る確認：Scratch LAN パッケージおよび実 Bridge プロセスを接続しての対話・GUI 疎通試験。
+
+## 2026-11-14 一気通貫結合確認（Scratch 相当 WS → 実 `@mc-remote/bridge` → TCP JSON-RPC → Display Sync → Headless Chrome Unity WebGL）
+
+- ナレッジ参照コミット：`451988d9cf55cfa0f13f4a1b00dc1983274b719d`
+- 結合コンポーネント：
+  - `Naohiro2g/minecraft-remote-tooling`（commit `6447f6e8cbfbeeb9d229990b5c4f6e82a5875666`、`/tmp/` 上の一時 read-only clone で `@mc-remote/bridge@0.1.0` をビルド・起動）
+  - `Code2Create.UnitySandbox.Server`（HTTP/WebSocket `:18080` + WebGL 静的配信 + TCP JSON-RPC `:25575`）
+  - Unity **6000.6.8f1 (237b6593792b)** WebGL ビルド＋Headless Chrome（SwiftShader WebGL 2.0、`1280x720`）
+- 確認できた導線：
+  1. `.NET` テスト 18/18 通過後、WebGL ビルドおよび実 `@mc-remote/bridge`（`Origin: https://scratch.mc-remote.com`、`Sec-WebSocket-Protocol: mcremote.bridge.one-shot.v1`、`?sandbox=127.0.0.1`）経由の接続を確立。
+  2. Unity WebGL がブラウザ起動直後に `/ws/sync?viewerId=v_...` へ接続し、初期スナップショット（`worldEpoch: 1, seq: 0, regions: []`）と区画 8 の初期視界を描画。
+  3. Bridge 経由の未認証 `hello` が `auth_required` (`-32000`) を返し、`mcremote_bridge_transport: "one-shot-v1"` 封筒で `auth.pairBegin`（6 桁 `pair_code` 発行）および `auth.pairPoll`（`pending`）が別 TCP 接続を跨いで動作。
+  4. Unity WebGL ページの生 `/ws/sync` ソケット経由で `/mcremote pair NNN-NNN` を承認し、`pairResult`（`approved: true`, `streamId: "stream-1"`）受信後に `auth.pairPoll` から bearer token (`mcrs_...`) を取得。
+  5. 新規 Bridge WS セッションで token 付き `hello`（`protocol: "23.2.1"`, `mc_version: "1.21.11"`, `server: "unity-sandbox"`, `world_constants.y_sea: 62`, `origin: [0, 0, 0]`）・`catalog.get`（10 ブロックと SHA-256 `catalogHash` 一致）・`events.poll`・`build.setDimension`・`build.setOrigin`（`[100, 0, 100]`）・`world.setBlocks`＋notification `world.setBlock`＋`connection.flush`・`world.getBlock`（通常および `[0, 320, 0]` の `out_of_bounds` `-32000`）・`chat.post` が透過通過。
+  6. Unity WebGL 側で `streamUpdated`（4 件）・`blockDelta`（8 件、合計 `77` ブロック）・`chat` を受信し、区画 8 に鉄ベース・金/ダイヤ柱・シーランタン/ガラス・TNT（`unstable: true`）が 3D 描画されることを前後スクリーンショット比較（変化画素 `61,519` px、`console.error` 0 件、未捕捉例外 0 件）で確認。
+- 確認中に見つけた軽微な改善余地（未改修メモ）：
+  - Headless Chrome 上の CDP クリック＋キーボード送出では Unity IMGUI チャット欄からの `/mcremote pair` 送信まで至らず、同ページの実 `/ws/sync` WebSocket 経由で承認フレームを送出するフォールバックを用いた。後から前後の画面を確認したところ、チャット履歴が 5 行前後に増えると左下パネル（高さ `195`）の下端付近で入力欄・ボタン行が少し下へ押されて見切れぎみになるため、実ユーザーによる WebGL ブラウザでの実入力操作感は別途試用・調整の余地がある。
+  - 初期 `pairResult` ＋ `hello` の流れの中で `[ペアリング] 原点を (0, 0, 0) へ同期しました` が複数回ログへ積まれる点も、表示ノイズを減らす観点から今後整理できる。
+- 残る確認：実際の人間によるブラウザ上での操作感（IMGUI チャット入力を含む）・実 `Naohiro2g/scratch-editor` LAN／本番相当 UI との疎通。
+
+## 2026-11-15 Scratch LAN / Python 実接続確認・UI/地形仕上げ・wire確定形（2026-11-14-03〜05）追従
+
+- ナレッジ参照コミット：`b4b23631fc6f053fe4e228bb0447c9b4b9502901`（`unity-first-slice-followup_ja.md` / `unity-first-slice-followup-addendum_ja.md`、`2026-11-14-01`〜`2026-11-14-05` 反映）
+- Unity：**6000.6.8f1 (237b6593792b)**、Linux、Built-in Render Pipeline、Input Manager、WebGL
+- human owner による実クライアント結合確認：
+  - **Scratch LAN パッケージ**: 接続・`/mcremote pair NNN-NNN` ペアリング、`postToChat`、`setBlock`、`setBlocks`、`getBlock`、`setBuildOrigin` が動作することを確認。
+  - **Python クライアント（`minecraft-remote-api`）**: デフォルトポート接続で `10,069` ブロック規模の 3D デジタル時計（`2026-11-15 07:04:33`）および 3D 座標軸を描画でき、Unity Web 上でブロック単位の視認性とリアルタイム同期を確認。
+- 操作・UI・地形・材質・ポートの仕上げ（human owner 試用フィードバック反映）：
+  - **既定 TCP ポート変更**: ローカルで稼働する Minecraft 側サーバー（`25575`）と同時起動できるよう、Unity箱庭サーバーの既定 TCP ポートを `25585` へ変更（`WorldConstants.DefaultTcpPort = 25585`）。
+  - **移動・HUD・パネル配置**: `Space` 上昇／`Shift` 降下、`Space×2` でフライト開始／`Shift×2` で解除、`Q×2` で HUD 対象を `[脚]` ⇔ `[照準]` 切替（表記を「脚」に統一）、McRemote 準拠HUD（絶対／建築原点相対／`#方位#`）、黒太めの照準（クロスヘア）、背景透過度を上げたパネル、幅 `700px` 前後での Scratch 並置対応、右下パネルへの区画 `0..8` 3×3 ボタン＆操作説明移動。
+  - **ブロック視認性・材質・地形・座標表示**:
+    - 1つの箱（`setBlocks` 等）でも 1 ブロック単位を数えられるよう `ApplyRepeatedBlockUvs` による面ごとリピート UV を実装し、`BorderTexture()` を `(0.62, 0.62, 0.62)` 乗算に変更して各ブロック固有色の暗色縁取りへ調整。Diamond（青・彩度増）と Sea Lantern（薄水色・発光控えめ）の色味も調整。
+    - 初期地形は区画 0〜8（区画 4 含む）各原点の `[-48..48]` を `y=62` の草ブロックとし、区画間は `y=62` を空気として `y=61` の土を露出（`DemoEditor.Validate` の `y=61` 土露出テスト・WebGL で検証）。
+    - 座標軸は `+X`/`+Z` を実線、`-X`/`-Z` と `Y=63..95` を `LineTextureMode.RepeatPerSegment` による点線で描画。区画ラベル `区画N (x, y, z)` は北向き・`y=100`・2倍表示（`fontSize=72`, `characterSize=0.22f`）・ドロップシャドウ（ずれ `(0.08f, -0.08f, 0)`）へ調整。
+- wire 確定形（`2026-11-14-03`〜`2026-11-14-05`）への追従：
+  - `hello.server`: `{ "name": "mc-remote-unity-sandbox", "version": "0.1.0" }`（object 形）。
+  - `out_of_bounds`: `code = -32000`, `data.reason = "out_of_bounds"`, `data.bounds = { y_min: -64, y_max: 319, world_border: { center: { x: 0.0, z: 0.0 }, size: 400.0 } }`, `data.violating = { x, y, z }`（絶対座標オブジェクト形）。
+  - `build_range_exceeded`: 未使用の `BuildDenied` を `BuildRangeExceeded` へ置換（第1スライスの権限範囲制限なしは維持）。
+  - 追従後の検証：`dotnet test server/Code2Create.UnitySandbox.sln` 全 **18/18** 合格（失敗 0、スキップ 0、1s）、`/healthz` で `{"status":"ok","worldEpoch":1,"seq":0,"connections":1,"tcpPort":25585}` 稼働確認済み。
+
+## 2026-11-15 PR仕上げ・`2321.3` release準備追従（`99e582b8` / `2026-11-15-01`〜`06`）
+
+- ナレッジ参照コミット：`99e582b85b8088e6e8e45f6de9a570be96f2148c`（`00-hub/unity-sandbox-first-slice-pr-instructions_ja.md`, `00-hub/unity-sandbox-release-instructions_ja.md`, `2026-11-15-01`〜`2026-11-15-06`）
+- UI・操作性仕上げ：
+  - WebGL の Pointer Lock 状態不整合（別アプリ切替後の復帰・チャット入力欄フォーカス残留）対策として、`SandboxWebSocket.jslib` / `LocalSandboxWalker.cs` / `LocalSandboxDemo.cs` を更新し、ブラウザ実 lock 状態の同期とチャット欄外クリックによるフォーカス解除を追加。
+  - 右下パネルの区画ワープボタンを実際の軸配置（`+X` 右／`+Z` 奥、プレイヤー初期南向き）に合わせて上段 `6 7 8`／中段 `3 4 5`／下段 `0 1 2` へ再配置し、`docs/local-demo_ja.md` も整合更新。
+  - `docs/2026-11-13-unity-sandbox-ideas.md` は検討当時メモとして `handoff-materials/2026-11-13-unity-sandbox-ideas-review/materials/` へ移動。
+- `2321.3` release 準備項目（§§1〜4）実装：
+  - **プロトコル `23.3.0`（`2026-11-15-03`④）**：テスト期待値を先に `23.3.0` へ更新＋再起動トークン失効テストを追加し、`23.2.1` サーバーで意図的失敗（`16` 合格 / `3` 失敗）を確認した上で `WorldConstants.ProtocolVersion = "23.3.0"` へ更新。
+  - **バージョン単一ソース（`2026-11-15-04`）**：ルート `VERSION`（開発中 `0.1.0`）を新設し、`WorldConstants.ResolveServerVersion`（`hello.server.version` と `/healthz`）・`DemoEditor.BuildWebGL`（`PlayerSettings.bundleVersion`）・コンテナ OCI ラベルへ統合（`Assembly.GetEntryAssembly()` が `dotnet test` 下で `testhost.dll` の `"17.14.1"` を拾う問題を `typeof(WorldConstants).Assembly` 参照へ修正）。
+  - **再起動時のインメモリトークン破棄（`2026-11-15-06`）**：`InMemorySandboxTokenStore` / `InMemoryViewerStreamBindingStore` は永続化せず、`world.Reset()` ではトークンを維持、プロセス再起動を模擬したテストで再起動前トークンが `token_not_found`（`-32000`）で拒否されることを検証。
+  - **コンテナイメージ定義（`2026-11-15-05`）**：マルチステージ `Dockerfile`（`.NET` Release publish＋WebGL `/app/wwwroot`、OCI ラベル、`8080/tcp` & `25585/tcp`）、`.dockerignore`、`scripts/build-container.sh`（ローカルビルド専用・GHCR push なし）を追加。
+- Unity 検証（Linux `6000.6.8f1 (237b6593792b)`）：
+  - `DemoEditor.Validate` -> `LOCAL_SANDBOX_VALIDATION_PASS: negative/relative coordinates, plots, dug terrain, six hit faces, ground, replace/remove, scene reset`
+  - `DemoPlaySmoke.Run`（クリーンコピー上で `-quit` なし実行後削除）-> `LOCAL_SANDBOX_PLAY_SMOKE_PASS: Start initialization, feet y=63, walking, ground collision, eye offset`
+  - `DemoEditor.BuildWebGL` -> `LOCAL_SANDBOX_WEBGL_BUILD_PASS`（`26490703 bytes`、`bundleVersion: 0.1.0` 反映確認）
+- サーバー／Web検証：
+  - `dotnet test server/Code2Create.UnitySandbox.sln` 全 **19/19** 合格（失敗 0、スキップ 0、期間 2s）、`dotnet build -c Release` 成功（警告 0・エラー 0）。
+  - ローカル稼働確認：`GET /healthz` -> `{"status":"ok","version":"0.1.0","protocol":"23.3.0","worldEpoch":1,"seq":0,"connections":1,"tcpPort":25585}`、`GET /` -> `HTTP/1.1 200 OK`（`Content-Length: 6892`）。
+- 未実施／後続確認：ホスト側の `docker.service` が停止中かつ非対話 `sudo` が使えない環境のため、実機での `scripts/build-container.sh`（`docker build` 実行）と human owner による PR head 上でのブラウザ操作・Scratch LAN／Python 結合確認は後続。
+
 - 日付・端末・OS・Unity／ブラウザの版：
 - 場面・ブロック数・変えた設定：
 - 試す前の予想：
