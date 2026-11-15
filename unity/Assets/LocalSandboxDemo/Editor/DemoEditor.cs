@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using UnityEditor;
+using UnityEditor.Build;
+using UnityEditor.Build.Reporting;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -10,19 +12,104 @@ namespace Code2Create.UnitySandbox.LocalDemo
 {
     public static class DemoEditor
     {
+        private const string MainScenePath = "Assets/LocalSandboxDemo/Scenes/LocalSandboxDemo.unity";
+
         [MenuItem("Tools/Local Sandbox/Create Demo Scene")]
         public static void CreateScene()
         {
             CheckPipeline();
-            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            if (!Application.isBatchMode && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             new GameObject("Local Sandbox Demo").AddComponent<LocalSandboxDemo>();
             Directory.CreateDirectory("Assets/LocalSandboxDemo/Scenes");
-            EditorSceneManager.SaveScene(scene, AssetDatabase.GenerateUniqueAssetPath("Assets/LocalSandboxDemo/Scenes/LocalSandboxDemo.unity"));
+            string path = Application.isBatchMode
+                ? MainScenePath
+                : AssetDatabase.GenerateUniqueAssetPath(MainScenePath);
+            EditorSceneManager.SaveScene(scene, path);
             Selection.activeObject = GameObject.Find("Local Sandbox Demo");
             if (SceneView.lastActiveSceneView != null)
                 SceneView.lastActiveSceneView.LookAt(new Vector3(100, 64, 100), Quaternion.Euler(25, 0, 0), 25);
-            Debug.Log("デモシーンを作成しました。Playで開始します。");
+            Debug.Log("デモシーンを作成しました。Playで開始します: " + path);
+        }
+
+        [MenuItem("Tools/Local Sandbox/Build WebGL")]
+        public static void BuildWebGL()
+        {
+            CheckPipeline();
+            EnsureAlwaysIncludedShader("Standard");
+            EnsureAlwaysIncludedShader("Sprites/Default");
+
+            if (!File.Exists(MainScenePath))
+            {
+                var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                new GameObject("Local Sandbox Demo").AddComponent<LocalSandboxDemo>();
+                Directory.CreateDirectory("Assets/LocalSandboxDemo/Scenes");
+                EditorSceneManager.SaveScene(scene, MainScenePath);
+            }
+
+            EditorBuildSettings.scenes = new[]
+            {
+                new EditorBuildSettingsScene(MainScenePath, true)
+            };
+
+            PlayerSettings.runInBackground = true;
+            string versionFile = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "..", "VERSION"));
+            if (File.Exists(versionFile))
+            {
+                string versionText = File.ReadAllText(versionFile).Trim();
+                if (!string.IsNullOrEmpty(versionText))
+                {
+                    PlayerSettings.bundleVersion = versionText;
+                }
+            }
+            PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.WebGL, ManagedStrippingLevel.Minimal);
+            PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
+            PlayerSettings.WebGL.exceptionSupport = WebGLExceptionSupport.ExplicitlyThrownExceptionsOnly;
+            PlayerSettings.defaultWebScreenWidth = 1280;
+            PlayerSettings.defaultWebScreenHeight = 720;
+
+            string outputDir = Environment.GetEnvironmentVariable("UNITY_WEBGL_BUILD_PATH");
+            if (string.IsNullOrWhiteSpace(outputDir))
+            {
+                outputDir = Path.GetFullPath("Builds/WebGL");
+            }
+            Directory.CreateDirectory(outputDir);
+
+            var buildOptions = new BuildPlayerOptions
+            {
+                scenes = new[] { MainScenePath },
+                locationPathName = outputDir,
+                target = BuildTarget.WebGL,
+                options = BuildOptions.None
+            };
+
+            var report = BuildPipeline.BuildPlayer(buildOptions);
+            if (report.summary.result != BuildResult.Succeeded)
+            {
+                throw new InvalidOperationException($"WebGL build failed: {report.summary.result}, errors={report.summary.totalErrors}");
+            }
+
+            ApplyResponsiveWebGlLayout(outputDir);
+            Debug.Log($"LOCAL_SANDBOX_WEBGL_BUILD_PASS: {outputDir} ({report.summary.totalSize} bytes)");
+        }
+
+        private static void ApplyResponsiveWebGlLayout(string outputDir)
+        {
+            string indexPath = Path.Combine(outputDir, "index.html");
+            if (!File.Exists(indexPath)) return;
+            string html = File.ReadAllText(indexPath);
+            const string marker = "<!-- unity-sandbox-responsive -->";
+            if (html.Contains(marker)) return;
+            const string responsiveCss =
+                "    " + marker + "\n" +
+                "    <style>\n" +
+                "      html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #1e242b; }\n" +
+                "      #unity-container.unity-desktop { position: fixed; inset: 0; width: 100%; height: 100%; left: 0; top: 0; transform: none; }\n" +
+                "      #unity-fullscreen-container, #unity-canvas { width: 100% !important; height: 100% !important; display: block; }\n" +
+                "      #unity-footer { display: none; }\n" +
+                "    </style>\n";
+            html = html.Replace("</head>", responsiveCss + "  </head>");
+            File.WriteAllText(indexPath, html);
         }
 
         [MenuItem("Tools/Local Sandbox/Validate Demo")]
@@ -52,6 +139,14 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 body.Move(Vector3.down * 2);
                 Require(DemoCoordinates.Cell(body.transform.position).y == 63, "feet at ground: " + body.transform.position);
 
+                // Dug grass reveals dirt at y=61
+                demo.Blocks.ApplyBox(new Vector3Int(0, 62, 0), new Vector3Int(0, 62, 0), "minecraft:air", trackPlacement: false, countAsModified: false);
+                Physics.SyncTransforms();
+                Require(physics.Raycast(new Vector3(0.5f, 70, 0.5f), Vector3.down, out var dugHit, 20), "dug cell hits dirt");
+                Require(DemoCoordinates.HitCell(dugHit) == new Vector3Int(0, 61, 0), "dug cell reveals y=61 dirt");
+
+                // Restore terrain and test replace/remove invariants
+                demo.Populate(false);
                 var cell = new Vector3Int(-10, 64, -10);
                 demo.Blocks.Put(cell, DemoMaterial.Gold);
                 var replacement = demo.Blocks.Put(cell, DemoMaterial.Iron);
@@ -68,7 +163,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 Require(demo.Blocks.Count == 150, "wall and staircase");
                 demo.Populate(false);
                 Require(demo.Blocks.Count == 120, "scene reset");
-                Debug.Log("LOCAL_SANDBOX_VALIDATION_PASS: negative/relative coordinates, plots, six hit faces, ground, replace/remove, scene reset");
+                Debug.Log("LOCAL_SANDBOX_VALIDATION_PASS: negative/relative coordinates, plots, dug terrain, six hit faces, ground, replace/remove, scene reset");
             }
             finally
             {
@@ -113,6 +208,31 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 if (target != null) { target.Release(); UnityEngine.Object.DestroyImmediate(target); }
                 EditorSceneManager.ClosePreviewScene(scene);
             }
+        }
+
+        private static void EnsureAlwaysIncludedShader(string shaderName)
+        {
+            var shader = Shader.Find(shaderName);
+            if (shader == null) return;
+
+            var settings = GraphicsSettings.GetGraphicsSettings();
+            if (settings == null) return;
+            var so = new SerializedObject(settings);
+            var prop = so.FindProperty("m_AlwaysIncludedShaders");
+            if (prop == null) return;
+
+            for (int i = 0; i < prop.arraySize; i++)
+            {
+                if (prop.GetArrayElementAtIndex(i).objectReferenceValue == shader)
+                {
+                    return;
+                }
+            }
+
+            prop.InsertArrayElementAtIndex(prop.arraySize);
+            prop.GetArrayElementAtIndex(prop.arraySize - 1).objectReferenceValue = shader;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            AssetDatabase.SaveAssets();
         }
 
         private static void CheckPipeline()

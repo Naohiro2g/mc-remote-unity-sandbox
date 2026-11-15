@@ -21,7 +21,22 @@ Unity 6の**3D (Built-in Render Pipeline)**、従来の入力機能（Input Mana
 
 `Tools > Local Sandbox > Validate Demo`で、座標と配置の検証を実行できます。`Create Demo Scene`は別のデモシーンを追加したいときに使います。
 
-入力が効かない場合は、`Edit > Project Settings > Player > Other Settings > Active Input Handling`を`Input Manager (Old)`または`Both`にし、求められたらEditorを再起動します。日本語が欠ける環境では、プロジェクトに日本語フォントを用意し、`Local Sandbox Demo`の`Hud Font`へ指定してください。
+入力が効かない場合は、`Edit > Project Settings > Player > Other Settings > Active Input Handling`を`Input Manager (Old)`または`Both`にし、求められたらEditorを再起動します。日本語表示には、`unity/Assets/LocalSandboxDemo/Resources/Fonts/NotoSansJP-Subset.ttf`（`SIL Open Font License 1.1`、詳細と出どころは[表示同期とローカルWebビルド設計](unity-sandbox-display-sync_ja.md)）を同梱しており、OSフォントが無いブラウザ環境でも表示できます。
+
+### WebGLビルド（Unity Web）
+
+`6000.6.8f1` を使い、次のコマンドで `unity/Builds/WebGL` へ書き出します（既定で圧縮なし・`runInBackground = true`）。
+
+```sh
+"$UNITY_EDITOR" -batchmode -nographics -buildTarget WebGL -projectPath "$DEMO_PROJECT" \
+  -executeMethod Code2Create.UnitySandbox.LocalDemo.DemoEditor.BuildWebGL -quit -logFile /tmp/unity-webgl-build.log
+```
+
+書き出した成果物をローカルの `.NET` サーバー（[表示同期とローカルWebビルド設計](unity-sandbox-display-sync_ja.md)、既定 TCP ポート `25585` でローカル Minecraft 用 `25575` と並存可能）から配信すると、そのまま `/ws/sync` による表示同期とペアリング承認が使えます。
+
+```sh
+dotnet run --project server/src/Code2Create.UnitySandbox.Server -- --url http://127.0.0.1:5080 --web-root unity/Builds/WebGL
+```
 
 ### Linux／macOSのターミナルで準備する
 
@@ -38,19 +53,29 @@ bash scripts/prepare-project.sh /path/to/Unity/Editor/Unity
 
 | 操作 | 動き |
 | --- | --- |
-| 画面をクリック | マウスで見回す |
-| Esc | マウスを解放する |
-| WASD／矢印 | 歩く |
+| 画面をクリック | マウスで見回す（チャット入力中や他ウィンドウからの復帰時も3D画面クリックで解除・再ロック） |
+| Esc | マウス解放／チャット入力終了（WebGL の Pointer Lock 解除と同期） |
+| WASD／矢印 | 歩く／飛ぶ |
 | R | 開始位置・向きへ戻る |
-| 1 | 各材質の10個の列・10段の柱へ切り替える |
-| 2 | 各材質の5×3の壁・4段の階段へ切り替える |
+| Space | ジャンプ（歩行時）／上昇（フライト時） |
+| Left/Right Shift | 降下（フライト時） |
+| Space × 2 | フライトモード開始 |
+| Shift × 2 | フライトモード解除 |
+| Q × 2 | 左上座標 HUD の対象切替（`[脚]` ⇔ `[照準]`） |
+| 1 | 各材質の10個の列・10段の柱へ切り替える（120個） |
+| 2 | 各材質の5×3の壁・4段の階段へ切り替える（150個） |
+| 3 | 基本10種ブロック見本へ切り替える（雪あり草・不安定TNT含む） |
+| T / Enter | チャット・`/mcremote pair NNN-NNN`入力（入力中はマウス解放） |
+| 右下パネルの区画0〜8（3×3）／直前のブロックへ | 各区画原点（上段 `6 7 8`／中段 `3 4 5`／下段 `0 1 2`、`+X`=右・`+Z`=奥）または直前の変更セルへ移動（操作ガイド併記） |
 
 最初の場面は120個、壁と階段の場面は150個です。地面や区画のガイドはこの個数に含みません。
 `Local Sandbox Demo`の`Column Height`をPlay前に変えると、柱の高さを変えて比べられます。
 
-地面は400×400を一枚で表し、上面がy=63、照準が読む地面のセルがy=62です。区画0〜8の原点と外周を線で表示し、中央の区画4は金色、区画8は水色にしています。区画の番号そのものは地面に印字していません。
+地面は400×400の全体構造（`y=59..-64` 石、`y=61..60` 土）の上で、区画0〜8（区画4を含む）それぞれの原点周囲 `-48..48` に `y=62` の草ブロックを敷き、区画間は `y=62` の草が剥がれて `y=61` の土が見える溝になっています。各区画原点には座標軸（`+X`/`+Z` は実線、`-X`/`-Z` および `Y=63..95` は点線）と、北向き・`y=100`・ドロップシャドウ付きの `区画N (x, y, z)` 3D ビルボードを表示しています。
 
-足と照準のセル座標を、世界座標と表示原点からの相対座標で表示します。表示原点の初期値は`(100, 0, 100)`で、Inspectorの`Display Origin`から変えられます。ブロックの配置は表示原点から独立しています。照準が当たらないときは`—`と表示します。
+ブロック群（`setBlocks` 等で1つの GameObject へまとめられた箱）は、面ごとのリピート UV タイルと各ブロック固有色の暗色（`0.62` 乗算）縁取りで描画しており、複数並んだ状態でも 1 ブロック単位を数え分けられます（草・土・石は縁取りなし）。
+
+左上パネルでは、接続状態・ブロック数・歩行/フライト状態と、McRemote 形式の座標 HUD（`[脚/照準] 絶対座標 / 相対座標 / #方位#`）を表示します（Scratch と並べる幅 700px 前後にも対応）。表示原点の初期値は `(100, 0, 100)` で、Inspector の `Display Origin` またはペアリング後の `build.setOrigin` に追従します。照準が当たらないときは `[-]` と表示します。
 
 ## 変えて比べる
 
