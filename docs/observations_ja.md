@@ -118,7 +118,10 @@
 - サーバー／Web検証：
   - `dotnet test server/Code2Create.UnitySandbox.sln` 全 **19/19** 合格（失敗 0、スキップ 0、期間 2s）、`dotnet build -c Release` 成功（警告 0・エラー 0）。
   - ローカル稼働確認：`GET /healthz` -> `{"status":"ok","version":"0.1.0","protocol":"23.3.0","worldEpoch":1,"seq":0,"connections":1,"tcpPort":25585}`、`GET /` -> `HTTP/1.1 200 OK`（`Content-Length: 6892`）。
-- 未実施／後続確認：ホスト側の `docker.service` が停止中かつ非対話 `sudo` が使えない環境のため、実機での `scripts/build-container.sh`（`docker build` 実行）と human owner による PR head 上でのブラウザ操作・Scratch LAN／Python 結合確認は後続。
+- コンテナ検証（SSH 経由の別ホスト Docker Engine `29.9.3`、`DOCKER_HOST=ssh://...`）：
+  - `SKIP_WEBGL_BUILD=1 ./scripts/build-container.sh`（head `0b69a03c2fef6faa83f56553038a4abd2844a258` 時点）で `ghcr.io/naohiro2g/mc-remote-unity-sandbox:v0.1.0`（Disk usage `371MB` / Content size `107MB`、コンテキスト転送 `26.71MB`、所要 `38.3s`、GHCR push なし）を生成し、`org.opencontainers.image.version="0.1.0"` / `revision="0b69a03c2fef6faa83f56553038a4abd2844a258"` / `licenses="MIT"` 等の OCI ラベル付与を確認。
+  - 一時起動コンテナ（`127.0.0.1:18080->8080`, `127.0.0.1:25585->25585`）上で `GET /healthz` -> `{"status":"ok","version":"0.1.0","protocol":"23.3.0","worldEpoch":1,"seq":0,"connections":0,"tcpPort":25585}`、`HEAD /` -> `HTTP/1.1 200 OK`（`Content-Length: 6892`）を確認し、確認後に停止・削除。
+- 後続確認：human owner による PR head 上でのブラウザ操作・Scratch LAN／Python 結合確認、および `2321.3` ゲート時の `VERSION` 更新・GHCR 公開。
 
 - 日付・端末・OS・Unity／ブラウザの版：
 - 場面・ブロック数・変えた設定：
