@@ -109,7 +109,7 @@ namespace Code2Create.UnitySandbox.World
             var box = WorldBox.FromEndpoints(abs1, abs2);
             if (box.Volume > MaxSetBlocksVolume)
             {
-                throw new SandboxOperationException(SandboxProtocolError.WorkLimitExceeded(box.Volume, MaxSetBlocksVolume));
+                throw new SandboxOperationException(SandboxProtocolError.BlockCountLimitExceeded(box.Volume, MaxSetBlocksVolume));
             }
 
             var resolved = Registry.ResolveAndValidate(blockSpecToken, "params[6]");
@@ -129,6 +129,122 @@ namespace Code2Create.UnitySandbox.World
             }
 
             BlockDeltaEmitted?.Invoke(emitted);
+        }
+
+        public IReadOnlyList<BlockValue> GetBlocks(
+            StreamBuildContext context,
+            int relX1,
+            int relY1,
+            int relZ1,
+            int relX2,
+            int relY2,
+            int relZ2)
+        {
+            if (context == null) throw new ArgumentNullException(nameof(context));
+
+            const int MaxAxisLength = 10;
+            const int MaxBlocks = 1000;
+
+            int minX = Math.Min(relX1, relX2);
+            int maxX = Math.Max(relX1, relX2);
+            int minY = Math.Min(relY1, relY2);
+            int maxY = Math.Max(relY1, relY2);
+            int minZ = Math.Min(relZ1, relZ2);
+            int maxZ = Math.Max(relZ1, relZ2);
+
+            long lenX = (long)maxX - minX + 1L;
+            long lenY = (long)maxY - minY + 1L;
+            long lenZ = (long)maxZ - minZ + 1L;
+            if (lenX > MaxAxisLength || lenY > MaxAxisLength || lenZ > MaxAxisLength || lenX * lenY * lenZ > MaxBlocks)
+            {
+                throw new SandboxOperationException(SandboxProtocolError.WorkLimitExceeded());
+            }
+
+            Int3 absMin;
+            Int3 absMax;
+            try
+            {
+                checked
+                {
+                    absMin = new Int3(context.Origin.X + minX, context.Origin.Y + minY, context.Origin.Z + minZ);
+                    absMax = new Int3(context.Origin.X + maxX, context.Origin.Y + maxY, context.Origin.Z + maxZ);
+                }
+            }
+            catch (OverflowException)
+            {
+                throw new SandboxOperationException(SandboxProtocolError.InvalidParams("params"));
+            }
+
+            ValidateCoordinateBounds(absMin);
+            ValidateCoordinateBounds(absMax);
+
+            var result = new List<BlockValue>((int)(lenX * lenY * lenZ));
+            lock (gate)
+            {
+                for (int x = absMin.X; x <= absMax.X; x++)
+                for (int y = absMin.Y; y <= absMax.Y; y++)
+                for (int z = absMin.Z; z <= absMax.Z; z++)
+                {
+                    result.Add(GetCellInternal(x, y, z));
+                }
+            }
+            return result;
+        }
+
+        public int GetHeight(StreamBuildContext context, int relX, int relZ, int? relMaxY = null)
+        {
+            if (context == null) throw new ArgumentNullException(nameof(context));
+
+            int absX;
+            int absZ;
+            try
+            {
+                checked
+                {
+                    absX = context.Origin.X + relX;
+                    absZ = context.Origin.Z + relZ;
+                }
+            }
+            catch (OverflowException)
+            {
+                throw new SandboxOperationException(SandboxProtocolError.InvalidParams("params"));
+            }
+
+            if (!WorldConstants.IsInHorizontalBounds(absX, absZ))
+            {
+                throw new SandboxOperationException(
+                    SandboxProtocolError.OutOfBounds(new Int3(absX, context.Origin.Y, absZ)));
+            }
+
+            int startY = WorldConstants.YMax;
+            if (relMaxY.HasValue)
+            {
+                long requested = (long)context.Origin.Y + relMaxY.Value;
+                startY = requested > WorldConstants.YMax
+                    ? WorldConstants.YMax
+                    : requested < int.MinValue ? int.MinValue : (int)requested;
+            }
+
+            if (startY < WorldConstants.YMin)
+            {
+                throw new SandboxOperationException(SandboxProtocolError.HeightNotFound());
+            }
+
+            lock (gate)
+            {
+                bool aboveIsPassable = startY == WorldConstants.YMax || IsPassableInternal(absX, startY + 1, absZ);
+                for (int y = startY; y >= WorldConstants.YMin; y--)
+                {
+                    bool currentIsPassable = IsPassableInternal(absX, y, absZ);
+                    if (!currentIsPassable && aboveIsPassable)
+                    {
+                        return y - context.Origin.Y;
+                    }
+                    aboveIsPassable = currentIsPassable;
+                }
+            }
+
+            throw new SandboxOperationException(SandboxProtocolError.HeightNotFound());
         }
 
         public void PostChat(StreamBuildContext context, string message)
@@ -186,6 +302,9 @@ namespace Code2Create.UnitySandbox.World
                 throw new SandboxOperationException(SandboxProtocolError.OutOfBounds(abs));
             }
         }
+
+        private bool IsPassableInternal(int absX, int absY, int absZ) =>
+            Registry.IsPassable(GetCellInternal(absX, absY, absZ).BlockId);
 
         private BlockValue GetCellInternal(int absX, int absY, int absZ)
         {

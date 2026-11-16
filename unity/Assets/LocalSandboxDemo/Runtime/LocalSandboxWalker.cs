@@ -75,9 +75,17 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
             if (Cursor.lockState == CursorLockMode.Locked)
             {
-                transform.Rotate(0, Input.GetAxisRaw("Mouse X") * 2, 0);
-                pitch = Mathf.Clamp(pitch - Input.GetAxisRaw("Mouse Y") * 2, -85, 85);
-                View.transform.localRotation = Quaternion.Euler(pitch, 0, 0);
+                float mouseX = Input.GetAxisRaw("Mouse X");
+                float mouseY = Input.GetAxisRaw("Mouse Y");
+                if (mouseX != 0f)
+                {
+                    transform.Rotate(0, mouseX * 2f, 0);
+                }
+                if (mouseY != 0f)
+                {
+                    pitch = Mathf.Clamp(pitch - mouseY * 2f, -90f, 90f);
+                    View.transform.localRotation = Quaternion.Euler(pitch, 0, 0);
+                }
             }
 
             var horizontal = Input.GetAxisRaw("Horizontal");
@@ -215,6 +223,43 @@ namespace Code2Create.UnitySandbox.LocalDemo
             verticalSpeed = 0;
             pitch = 8;
             View.transform.localRotation = Quaternion.Euler(pitch, 0, 0);
+        }
+
+        internal void GetMinecraftPose(out Vector3 feetPos, out float mcYaw, out float mcPitch)
+        {
+            feetPos = transform.position;
+            float rawYaw = -transform.eulerAngles.y % 360f;
+            if (rawYaw >= 180f) rawYaw -= 360f;
+            else if (rawYaw < -180f) rawYaw += 360f;
+            mcYaw = rawYaw == 0f ? 0f : rawYaw;
+            mcPitch = pitch == 0f ? 0f : pitch;
+        }
+
+        internal void ApplyRemotePose(bool hasPos, Vector3 targetPos, bool hasRotation, float mcYaw, float mcPitch)
+        {
+            if (body == null) return;
+            Quaternion targetRot = hasRotation ? Quaternion.Euler(0f, -mcYaw, 0f) : transform.rotation;
+
+            if (hasPos)
+            {
+                body.enabled = false;
+                transform.SetPositionAndRotation(targetPos, targetRot);
+                body.enabled = true;
+                verticalSpeed = 0f;
+            }
+            else if (hasRotation)
+            {
+                transform.rotation = targetRot;
+            }
+
+            if (hasRotation)
+            {
+                pitch = Mathf.Clamp(mcPitch, -90f, 90f);
+                if (View != null)
+                {
+                    View.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+                }
+            }
         }
 
         private void OnApplicationFocus(bool focused) { if (!focused) Unlock(); }

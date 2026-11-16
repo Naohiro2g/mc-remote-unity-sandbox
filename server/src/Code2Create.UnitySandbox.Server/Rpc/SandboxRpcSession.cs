@@ -27,7 +27,7 @@ namespace Code2Create.UnitySandbox.Server.Rpc
     /// Per-connection JSON-RPC 2.0 session handling pre-hello gate (auth.* / hello) and post-hello dispatch.
     /// Pairings correlate via pairing_id so auth.pairBegin, auth.pairPoll, and hello can run on separate TCP connections.
     /// </summary>
-    public sealed class SandboxRpcSession
+    public sealed class SandboxRpcSession : IDisposable
     {
         private static readonly Regex SemverRegex = new Regex(@"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$", RegexOptions.Compiled);
 
@@ -41,11 +41,15 @@ namespace Code2Create.UnitySandbox.Server.Rpc
         private readonly string serverName;
         private readonly int buildRange;
         private readonly string serverVersion;
+        private readonly SandboxEventRing eventRing = new SandboxEventRing();
         private readonly SandboxJsonRpcDispatcher dispatcher;
         private readonly string sessionId = "sess_" + Guid.NewGuid().ToString("N").Substring(0, 12);
 
         private bool helloComplete;
         private StreamBuildContext? boundContext;
+        private string? boundViewerId;
+        private int disposed;
+        private volatile ContextSnapshot? eventOriginSnapshot;
 
         public SandboxRpcSession(
             SandboxWorld world,
@@ -72,7 +76,13 @@ namespace Code2Create.UnitySandbox.Server.Rpc
 
             dispatcher = new SandboxJsonRpcDispatcher(
                 this.world,
-                ctx => this.displaySyncHub.NotifyStreamOriginChanged(ctx.StreamId, ctx.Dimension, ctx.Origin));
+                ctx =>
+                {
+                    eventOriginSnapshot = new ContextSnapshot(ctx.Dimension, ctx.Origin);
+                    this.displaySyncHub.NotifyStreamOriginChanged(ctx.StreamId, ctx.Dimension, ctx.Origin);
+                },
+                new SessionPlayerBridge(this),
+                eventRing);
         }
 
         public bool IsHelloComplete => helloComplete;
@@ -380,10 +390,25 @@ namespace Code2Create.UnitySandbox.Server.Rpc
                 playerUuid = Guid.NewGuid().ToString("D");
             }
 
-            var ctx = bindingStore.GetOrCreateStreamContext(streamId);
-            ctx.Dimension = dimension;
-            ctx.Origin = origin;
+            _ = bindingStore.GetOrCreateStreamContext(streamId);
+            var ctx = new StreamBuildContext(streamId, dimension, origin);
             boundContext = ctx;
+            eventOriginSnapshot = new ContextSnapshot(dimension, origin);
+            if (resolvedRecord != null)
+            {
+                boundViewerId = resolvedRecord.ViewerId;
+                displaySyncHub.RegisterViewerChatListener(
+                    resolvedRecord.ViewerId,
+                    sessionId,
+                    message =>
+                    {
+                        var snap = eventOriginSnapshot;
+                        if (snap != null)
+                        {
+                            eventRing.OfferChatPosted(snap.Dimension, snap.Origin, message);
+                        }
+                    });
+            }
 
             displaySyncHub.NotifyStreamOriginChanged(streamId, dimension, origin);
 
@@ -514,6 +539,48 @@ namespace Code2Create.UnitySandbox.Server.Rpc
                 count++;
             }
             return count;
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref disposed, 1) == 0 && !string.IsNullOrEmpty(boundViewerId))
+            {
+                displaySyncHub.UnregisterViewerChatListener(boundViewerId, sessionId);
+            }
+        }
+
+        private sealed class ContextSnapshot
+        {
+            public string Dimension { get; }
+            public Int3 Origin { get; }
+
+            public ContextSnapshot(string dimension, Int3 origin)
+            {
+                Dimension = dimension;
+                Origin = origin;
+            }
+        }
+
+        private sealed class SessionPlayerBridge : ISandboxPlayerBridge
+        {
+            private readonly SandboxRpcSession owner;
+
+            public SessionPlayerBridge(SandboxRpcSession owner)
+            {
+                this.owner = owner;
+            }
+
+            public PlayerAccessStatus TryGetPlayerState(out SandboxPlayerState state) =>
+                owner.displaySyncHub.TryGetViewerPlayerState(owner.boundViewerId, out state);
+
+            public PlayerAccessStatus TrySetPlayerPosition(string dimension, double absX, double absY, double absZ, out SandboxPlayerState updated) =>
+                owner.displaySyncHub.TrySetViewerPosition(owner.boundViewerId, dimension, absX, absY, absZ, out updated);
+
+            public PlayerAccessStatus TrySetPlayerPose(string dimension, double absX, double absY, double absZ, double normalizedYaw, double pitch, out SandboxPlayerState updated) =>
+                owner.displaySyncHub.TrySetViewerPose(owner.boundViewerId, dimension, absX, absY, absZ, normalizedYaw, pitch, out updated);
+
+            public PlayerAccessStatus TrySetPlayerRotation(double normalizedYaw, double pitch, out SandboxPlayerState updated) =>
+                owner.displaySyncHub.TrySetViewerRotation(owner.boundViewerId, normalizedYaw, pitch, out updated);
         }
     }
 }

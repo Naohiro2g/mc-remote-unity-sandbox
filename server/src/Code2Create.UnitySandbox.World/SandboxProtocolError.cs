@@ -38,7 +38,12 @@ namespace Code2Create.UnitySandbox.World
             var dataObj = new JObject();
             foreach (var kv in Data)
             {
-                dataObj[kv.Key] = kv.Value is null ? JValue.CreateNull() : JToken.FromObject(kv.Value);
+                dataObj[kv.Key] = kv.Value switch
+                {
+                    null => JValue.CreateNull(),
+                    JToken token => token.DeepClone(),
+                    _ => JToken.FromObject(kv.Value)
+                };
             }
 
             return new JObject
@@ -82,6 +87,15 @@ namespace Code2Create.UnitySandbox.World
                 });
 
         public static SandboxProtocolError OutOfBounds(Int3 violating) =>
+            CreateOutOfBounds(violating.X, violating.Y, violating.Z);
+
+        public static SandboxProtocolError OutOfBounds(double violatingX, double violatingY, double violatingZ) =>
+            CreateOutOfBounds(
+                SandboxWireNumbers.PositionOrRawDouble(violatingX),
+                SandboxWireNumbers.PositionOrRawDouble(violatingY),
+                SandboxWireNumbers.PositionOrRawDouble(violatingZ));
+
+        private static SandboxProtocolError CreateOutOfBounds(object x, object y, object z) =>
             new SandboxProtocolError(-32000, "out of bounds", "out_of_bounds",
                 new Dictionary<string, object?>
                 {
@@ -101,9 +115,9 @@ namespace Code2Create.UnitySandbox.World
                     },
                     ["violating"] = new Dictionary<string, object?>
                     {
-                        ["x"] = violating.X,
-                        ["y"] = violating.Y,
-                        ["z"] = violating.Z
+                        ["x"] = x,
+                        ["y"] = y,
+                        ["z"] = z
                     }
                 });
 
@@ -126,12 +140,15 @@ namespace Code2Create.UnitySandbox.World
                     }
                 });
 
-        public static SandboxProtocolError WorkLimitExceeded(long requestedVolume, int maxVolume) =>
-            new SandboxProtocolError(-32000, "work limit exceeded", "work_limit_exceeded",
+        public static SandboxProtocolError WorkLimitExceeded() =>
+            new SandboxProtocolError(-32000, "work limit exceeded", "work_limit_exceeded");
+
+        public static SandboxProtocolError BlockCountLimitExceeded(long requestedVolume, int maxVolume) =>
+            new SandboxProtocolError(-32000, "block count limit exceeded", "block_count_limit_exceeded",
                 new Dictionary<string, object?>
                 {
-                    ["requested"] = requestedVolume,
-                    ["limit"] = maxVolume
+                    ["limit"] = maxVolume,
+                    ["requested"] = requestedVolume
                 });
 
         public static SandboxProtocolError MethodNotFound(string method) =>
@@ -175,6 +192,18 @@ namespace Code2Create.UnitySandbox.World
                 {
                     ["dimension"] = dimension
                 });
+
+        public static SandboxProtocolError HeightNotFound() =>
+            new SandboxProtocolError(-32000, "height not found", "height_not_found");
+
+        public static SandboxProtocolError PlayerOffline() =>
+            new SandboxProtocolError(-32000, "player offline", "player_offline");
+
+        public static SandboxProtocolError ZeroDirection() =>
+            new SandboxProtocolError(-32602, "zero direction", "zero_direction");
+
+        public static SandboxProtocolError TeleportFailed() =>
+            new SandboxProtocolError(-32000, "teleport failed", "teleport_failed");
     }
 
     public sealed class SandboxOperationException : Exception

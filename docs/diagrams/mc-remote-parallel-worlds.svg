@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="650" viewBox="0 0 1280 650" role="img" aria-labelledby="title description">
+  <title id="title">マイクラリモコンにおける2つの世界：MinecraftとUnity箱庭</title>
+  <desc id="description">Scratch・Bridge・Python・C#などのリモコン側から、共通のMcRemote Protocol（JSON-RPC 2.0 over TCP）を通じて、マインクラフトの世界（Paper + McRemote、TCP 25575）またはUnity箱庭の世界（Unity箱庭サーバー + Unity Web、TCP 25585）のどちらにも接続できる並行構成図。</desc>
+  <defs>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#2563eb" />
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#047857" />
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#b45309" />
+    </marker>
+  </defs>
+
+  <rect width="1280" height="650" fill="#f8fafc" />
+
+  <g font-family="Noto Sans CJK JP, sans-serif" fill="#172033">
+    <text x="36" y="48" font-size="28" font-weight="700">マイクラリモコンにおける「2つの世界」</text>
+    <text x="36" y="80" font-size="16" fill="#475569">Scratch や Python などの「リモコン」は同じ仕組みのまま、つなぐ先の「世界」を選べます</text>
+
+    <!-- 左カラム：リモコン側 -->
+    <rect x="36" y="104" width="420" height="444" rx="16" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" />
+    <text x="56" y="136" font-size="20" font-weight="700">リモコン側（コードを書く・動かす）</text>
+
+    <rect x="56" y="156" width="164" height="92" rx="12" fill="#fff7ed" stroke="#c2410c" stroke-width="2" />
+    <text x="138" y="193" text-anchor="middle" font-size="22" font-weight="700">Scratch</text>
+    <text x="138" y="222" text-anchor="middle" font-size="14" fill="#7c2d12">ブロックで建築コード</text>
+
+    <rect x="278" y="156" width="158" height="92" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2" />
+    <text x="357" y="193" text-anchor="middle" font-size="22" font-weight="700">Bridge</text>
+    <text x="357" y="222" text-anchor="middle" font-size="14" fill="#1e40af">WSS ⇄ TCP 中継</text>
+
+    <path d="M220 202 H273" fill="none" stroke="#2563eb" stroke-width="3" marker-end="url(#arrowBlue)" />
+    <text x="249" y="189" text-anchor="middle" font-size="14" font-weight="700" fill="#1d4ed8">WSS</text>
+
+    <rect x="56" y="280" width="380" height="104" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2" />
+    <text x="246" y="315" text-anchor="middle" font-size="21" font-weight="700">Python / C# / Java ほか</text>
+    <text x="246" y="344" text-anchor="middle" font-size="15" fill="#1e3a8a">minecraft-remote-api などのクライアント</text>
+    <text x="246" y="368" text-anchor="middle" font-size="13.5" fill="#475569">手元の PC から直接 TCP 接続</text>
+
+    <rect x="56" y="408" width="380" height="120" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" />
+    <text x="76" y="438" font-size="16" font-weight="700">認証（ペアリング）も共通の手順</text>
+    <text x="76" y="467" font-size="14.5" fill="#334155">どちらの「世界」につなぐときも、表示された</text>
+    <text x="76" y="492" font-size="15" font-weight="700" fill="#1d4ed8">/mcremote pair NNN-NNN</text>
+    <text x="76" y="514" font-size="14.5" fill="#334155">を世界側のチャット欄に入力して承認します</text>
+
+    <!-- 中央ハブ：共通通信 -->
+    <rect x="488" y="148" width="128" height="356" rx="14" fill="#1e293b" stroke="#0f172a" stroke-width="2" />
+    <g fill="#ffffff" text-anchor="middle">
+      <text x="552" y="274" font-size="20" font-weight="700">共通通信</text>
+      <text x="552" y="310" font-size="15" font-weight="700" fill="#93c5fd">McRemote</text>
+      <text x="552" y="334" font-size="15" font-weight="700" fill="#93c5fd">Protocol</text>
+      <text x="552" y="370" font-size="13.5" fill="#cbd5e1">JSON-RPC 2.0</text>
+      <text x="552" y="393" font-size="13.5" fill="#cbd5e1">over TCP</text>
+    </g>
+
+    <!-- リモコン側 → 共通通信 -->
+    <path d="M436 202 H483" fill="none" stroke="#2563eb" stroke-width="3" marker-end="url(#arrowBlue)" />
+    <text x="462" y="189" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1d4ed8">TCP</text>
+    <path d="M436 332 H483" fill="none" stroke="#2563eb" stroke-width="3" marker-end="url(#arrowBlue)" />
+    <text x="462" y="319" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1d4ed8">TCP</text>
+
+    <!-- 右カラム上：世界① マインクラフトの世界 -->
+    <rect x="650" y="104" width="594" height="202" rx="16" fill="#fefce8" stroke="#ca8a04" stroke-width="2" stroke-dasharray="8 5" />
+    <text x="670" y="136" font-size="19" font-weight="700" fill="#854d0e">世界①：マインクラフトの世界（McRemote + Paper）</text>
+
+    <rect x="670" y="156" width="234" height="128" rx="12" fill="#ffffff" stroke="#ca8a04" stroke-width="2" />
+    <text x="787" y="191" text-anchor="middle" font-size="20" font-weight="700">Paper + McRemote</text>
+    <text x="787" y="220" text-anchor="middle" font-size="15" font-weight="700" fill="#1d4ed8">既定ポート TCP 25575</text>
+    <text x="787" y="248" text-anchor="middle" font-size="14" fill="#475569">プラグインで命令を</text>
+    <text x="787" y="268" text-anchor="middle" font-size="14" fill="#475569">マイクラ世界へ反映</text>
+
+    <rect x="990" y="156" width="234" height="128" rx="12" fill="#fef9c3" stroke="#a16207" stroke-width="2" />
+    <text x="1107" y="191" text-anchor="middle" font-size="19" font-weight="700">Minecraft アプリ</text>
+    <text x="1107" y="220" text-anchor="middle" font-size="14.5" fill="#713f12">Java版 / 統合版</text>
+    <text x="1107" y="248" text-anchor="middle" font-size="14" fill="#475569">マイクラ本来の</text>
+    <text x="1107" y="268" text-anchor="middle" font-size="14" fill="#475569">広大な世界を探索</text>
+
+    <path d="M904 220 H985" fill="none" stroke="#b45309" stroke-width="3" marker-end="url(#arrowAmber)" />
+    <text x="945" y="206" text-anchor="middle" font-size="13.5" font-weight="700" fill="#92400e">ゲーム接続</text>
+
+    <!-- 右カラム下：世界② Unity箱庭の世界 -->
+    <rect x="650" y="324" width="594" height="224" rx="16" fill="#ecfdf5" stroke="#047857" stroke-width="2.5" />
+    <text x="670" y="356" font-size="19" font-weight="700" fill="#065f46">世界②：Unity箱庭の世界（本リポジトリ）</text>
+
+    <rect x="670" y="376" width="234" height="150" rx="12" fill="#172b4d" stroke="#172b4d" stroke-width="2" />
+    <text x="787" y="414" text-anchor="middle" font-size="20" font-weight="700" fill="#ffffff">Unity箱庭サーバー</text>
+    <text x="787" y="454" text-anchor="middle" font-size="15" font-weight="700" fill="#93c5fd">既定ポート TCP 25585</text>
+    <text x="787" y="488" text-anchor="middle" font-size="14.5" fill="#e2e8f0">.NET / Web配信</text>
+
+    <rect x="990" y="376" width="234" height="150" rx="12" fill="#047857" stroke="#047857" stroke-width="2" />
+    <text x="1107" y="410" text-anchor="middle" font-size="18.5" font-weight="700" fill="#ffffff">Unity Web（ブラウザ）</text>
+    <text x="1107" y="443" text-anchor="middle" font-size="14.5" fill="#ecfdf5">マイクラの超簡単な</text>
+    <text x="1107" y="465" text-anchor="middle" font-size="14.5" fill="#ecfdf5">シミュレーション</text>
+    <text x="1107" y="497" text-anchor="middle" font-size="14.5" font-weight="700" fill="#d1fae5">マイクラアカウント不要</text>
+
+    <path d="M904 451 H985" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)" />
+    <text x="945" y="432" text-anchor="middle" font-size="13.5" font-weight="700" fill="#047857">WS / WSS</text>
+    <text x="945" y="476" text-anchor="middle" font-size="13.5" font-weight="700" fill="#047857">表示同期</text>
+
+    <!-- 共通通信 → 2つの世界 -->
+    <path d="M616 220 H665" fill="none" stroke="#2563eb" stroke-width="3" marker-end="url(#arrowBlue)" />
+    <path d="M616 451 H665" fill="none" stroke="#2563eb" stroke-width="3" marker-end="url(#arrowBlue)" />
+
+    <!-- フッター -->
+    <rect x="36" y="568" width="1208" height="64" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" />
+    <text x="56" y="595" font-size="16" font-weight="700">1台のPCで両方の世界を同時に動かすこともできます</text>
+    <text x="56" y="619" font-size="14.5" fill="#475569">Minecraft（TCP 25575）と Unity箱庭（TCP 25585）は既定ポートが分かれているため、Scratch や Python の接続先を切り替えて行き来できます。</text>
+  </g>
+</svg>

@@ -29,6 +29,11 @@ namespace Code2Create.UnitySandbox.Server.Sync
         private readonly PairingRateLimiter rateLimiter;
         private readonly Func<DateTimeOffset> clock;
         private readonly ConcurrentDictionary<string, SyncConnection> connections = new ConcurrentDictionary<string, SyncConnection>(StringComparer.Ordinal);
+        private readonly object poseGate = new object();
+        private readonly Dictionary<string, ViewerPoseEntry> viewerPoses = new Dictionary<string, ViewerPoseEntry>(StringComparer.Ordinal);
+        private readonly object chatListenerGate = new object();
+        private readonly Dictionary<string, Dictionary<string, Action<string>>> viewerChatListeners =
+            new Dictionary<string, Dictionary<string, Action<string>>>(StringComparer.Ordinal);
 
         public DisplaySyncHub(
             SandboxWorld world,
@@ -52,6 +57,93 @@ namespace Code2Create.UnitySandbox.Server.Sync
 
         public int ActiveConnectionCount => connections.Count;
 
+        public bool IsViewerOnline(string viewerId)
+        {
+            if (string.IsNullOrEmpty(viewerId)) return false;
+            foreach (var conn in connections.Values)
+            {
+                if (conn.IsOpen && string.Equals(conn.ViewerId, viewerId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public PlayerAccessStatus TryGetViewerPlayerState(string? viewerId, out SandboxPlayerState state)
+        {
+            state = default;
+            if (string.IsNullOrEmpty(viewerId)) return PlayerAccessStatus.AuthRequired;
+            if (!IsViewerOnline(viewerId)) return PlayerAccessStatus.PlayerOffline;
+
+            lock (poseGate)
+            {
+                ViewerPoseEntry entry = GetOrCreatePoseEntryLocked(viewerId);
+                state = entry.ToState();
+                return PlayerAccessStatus.Ok;
+            }
+        }
+
+        public PlayerAccessStatus TrySetViewerPosition(
+            string? viewerId,
+            string dimension,
+            double absX,
+            double absY,
+            double absZ,
+            out SandboxPlayerState updated) =>
+            TryUpdateViewerPose(viewerId, true, dimension, absX, absY, absZ, false, 0.0, 0.0, out updated);
+
+        public PlayerAccessStatus TrySetViewerPose(
+            string? viewerId,
+            string dimension,
+            double absX,
+            double absY,
+            double absZ,
+            double normalizedYaw,
+            double pitch,
+            out SandboxPlayerState updated) =>
+            TryUpdateViewerPose(viewerId, true, dimension, absX, absY, absZ, true, normalizedYaw, pitch, out updated);
+
+        public PlayerAccessStatus TrySetViewerRotation(
+            string? viewerId,
+            double normalizedYaw,
+            double pitch,
+            out SandboxPlayerState updated) =>
+            TryUpdateViewerPose(viewerId, false, WorldConstants.DefaultDimension, 0.0, 0.0, 0.0, true, normalizedYaw, pitch, out updated);
+
+        public void RegisterViewerChatListener(string viewerId, string listenerId, Action<string> onChatMessage)
+        {
+            if (string.IsNullOrEmpty(viewerId)) throw new ArgumentException("viewerId is required.", nameof(viewerId));
+            if (string.IsNullOrEmpty(listenerId)) throw new ArgumentException("listenerId is required.", nameof(listenerId));
+            if (onChatMessage == null) throw new ArgumentNullException(nameof(onChatMessage));
+
+            lock (chatListenerGate)
+            {
+                if (!viewerChatListeners.TryGetValue(viewerId, out var map))
+                {
+                    map = new Dictionary<string, Action<string>>(StringComparer.Ordinal);
+                    viewerChatListeners[viewerId] = map;
+                }
+                map[listenerId] = onChatMessage;
+            }
+        }
+
+        public void UnregisterViewerChatListener(string viewerId, string listenerId)
+        {
+            if (string.IsNullOrEmpty(viewerId) || string.IsNullOrEmpty(listenerId)) return;
+            lock (chatListenerGate)
+            {
+                if (viewerChatListeners.TryGetValue(viewerId, out var map))
+                {
+                    map.Remove(listenerId);
+                    if (map.Count == 0)
+                    {
+                        viewerChatListeners.Remove(viewerId);
+                    }
+                }
+            }
+        }
+
         public async Task HandleWebSocketAsync(WebSocket socket, CancellationToken cancellationToken, string? initialViewerId = null)
         {
             var connId = Guid.NewGuid().ToString("N");
@@ -70,6 +162,10 @@ namespace Code2Create.UnitySandbox.Server.Sync
                 var initialSnapshot = world.GetSnapshot();
                 var initialActive = conn.ViewerId != null ? bindingStore.GetActiveStreamForViewer(conn.ViewerId) : null;
                 await conn.SendAsync(BuildSnapshotJson(initialSnapshot, initialActive), cancellationToken).ConfigureAwait(false);
+                if (conn.ViewerId != null && TryBuildPersistedPoseJson(conn.ViewerId, out string initialPoseJson))
+                {
+                    await conn.SendAsync(initialPoseJson, cancellationToken).ConfigureAwait(false);
+                }
 
                 var buffer = new byte[16 * 1024];
                 while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
@@ -140,6 +236,10 @@ namespace Code2Create.UnitySandbox.Server.Sync
                     var active = conn.ViewerId != null ? bindingStore.GetActiveStreamForViewer(conn.ViewerId) : null;
                     string payload = BuildSnapshotJson(snapshot, active);
                     await conn.SendAsync(payload, cancellationToken).ConfigureAwait(false);
+                    if (conn.ViewerId != null && TryBuildPersistedPoseJson(conn.ViewerId, out string resyncPoseJson))
+                    {
+                        await conn.SendAsync(resyncPoseJson, cancellationToken).ConfigureAwait(false);
+                    }
                     break;
                 }
 
@@ -158,11 +258,24 @@ namespace Code2Create.UnitySandbox.Server.Sync
                     {
                         await HandleApprovePairAsync(conn, extractedCode, cancellationToken).ConfigureAwait(false);
                     }
-                    else
+                    else if (!text.StartsWith("/", StringComparison.Ordinal))
                     {
                         var active = conn.ViewerId != null ? bindingStore.GetActiveStreamForViewer(conn.ViewerId) : null;
                         string streamId = active?.StreamId ?? "viewer";
                         world.PostChat(new StreamBuildContext(streamId), text);
+                        if (!string.IsNullOrEmpty(conn.ViewerId))
+                        {
+                            NotifyViewerChatListeners(conn.ViewerId, text);
+                        }
+                    }
+                    break;
+                }
+
+                case "playerPose":
+                {
+                    if (!string.IsNullOrEmpty(conn.ViewerId))
+                    {
+                        HandleViewerPoseReport(conn.ViewerId, obj);
                     }
                     break;
                 }
@@ -447,6 +560,7 @@ namespace Code2Create.UnitySandbox.Server.Sync
 
             public string ConnectionId { get; }
             public string? ViewerId { get; set; }
+            public bool IsOpen => socket.State == WebSocketState.Open;
 
             public SyncConnection(string connectionId, WebSocket socket)
             {
@@ -474,6 +588,199 @@ namespace Code2Create.UnitySandbox.Server.Sync
             }
 
             public void Dispose() => sendGate.Dispose();
+        }
+
+        private PlayerAccessStatus TryUpdateViewerPose(
+            string? viewerId,
+            bool hasPos,
+            string dimension,
+            double absX,
+            double absY,
+            double absZ,
+            bool hasRotation,
+            double normalizedYaw,
+            double pitch,
+            out SandboxPlayerState updated)
+        {
+            updated = default;
+            if (string.IsNullOrEmpty(viewerId)) return PlayerAccessStatus.AuthRequired;
+            if (!IsViewerOnline(viewerId)) return PlayerAccessStatus.PlayerOffline;
+
+            string payload;
+            lock (poseGate)
+            {
+                ViewerPoseEntry entry = GetOrCreatePoseEntryLocked(viewerId);
+                if (hasPos)
+                {
+                    entry.Dimension = dimension;
+                    entry.X = absX;
+                    entry.Y = absY;
+                    entry.Z = absZ;
+                }
+                if (hasRotation)
+                {
+                    entry.Yaw = SandboxWireNumbers.NormalizeYaw(normalizedYaw);
+                    entry.Pitch = pitch;
+                }
+                entry.PoseSeq++;
+                updated = entry.ToState();
+                payload = BuildPlayerPoseJson(entry.PoseSeq, hasPos, updated, hasRotation);
+            }
+
+            SendToViewer(viewerId, payload);
+            return PlayerAccessStatus.Ok;
+        }
+
+        private bool TryBuildPersistedPoseJson(string viewerId, out string payload)
+        {
+            lock (poseGate)
+            {
+                if (viewerPoses.TryGetValue(viewerId, out var entry) && entry.PoseSeq > 0)
+                {
+                    payload = BuildPlayerPoseJson(entry.PoseSeq, true, entry.ToState(), true);
+                    return true;
+                }
+            }
+            payload = string.Empty;
+            return false;
+        }
+
+        private void HandleViewerPoseReport(string viewerId, JObject obj)
+        {
+            if (!obj.TryGetValue("pos", StringComparison.Ordinal, out var posToken) ||
+                posToken is not JArray posArr ||
+                posArr.Count != 3 ||
+                !TryReadFiniteDouble(posArr[0], out double x) ||
+                !TryReadFiniteDouble(posArr[1], out double y) ||
+                !TryReadFiniteDouble(posArr[2], out double z) ||
+                !obj.TryGetValue("yaw", StringComparison.Ordinal, out var yawToken) ||
+                !TryReadFiniteDouble(yawToken, out double yaw) ||
+                !obj.TryGetValue("pitch", StringComparison.Ordinal, out var pitchToken) ||
+                !TryReadFiniteDouble(pitchToken, out double pitch))
+            {
+                return;
+            }
+
+            long clientPoseSeq = 0;
+            if (obj.TryGetValue("poseSeq", StringComparison.Ordinal, out var seqToken) &&
+                seqToken.Type == JTokenType.Integer)
+            {
+                clientPoseSeq = seqToken.Value<long>();
+            }
+
+            double normalizedYaw = SandboxWireNumbers.NormalizeYaw(yaw);
+            double clampedPitch = Math.Clamp(pitch, -90.0, 90.0);
+
+            lock (poseGate)
+            {
+                ViewerPoseEntry entry = GetOrCreatePoseEntryLocked(viewerId);
+                if (clientPoseSeq < entry.PoseSeq)
+                {
+                    return;
+                }
+                entry.X = x;
+                entry.Y = y;
+                entry.Z = z;
+                entry.Yaw = normalizedYaw;
+                entry.Pitch = clampedPitch;
+            }
+        }
+
+        private ViewerPoseEntry GetOrCreatePoseEntryLocked(string viewerId)
+        {
+            if (!viewerPoses.TryGetValue(viewerId, out var entry))
+            {
+                entry = new ViewerPoseEntry();
+                viewerPoses[viewerId] = entry;
+            }
+            return entry;
+        }
+
+        private void SendToViewer(string viewerId, string payload)
+        {
+            foreach (var conn in connections.Values)
+            {
+                if (conn.IsOpen && string.Equals(conn.ViewerId, viewerId, StringComparison.Ordinal))
+                {
+                    _ = SendSafeAsync(conn, payload);
+                }
+            }
+        }
+
+        private void NotifyViewerChatListeners(string viewerId, string message)
+        {
+            Action<string>[] snapshot;
+            lock (chatListenerGate)
+            {
+                if (!viewerChatListeners.TryGetValue(viewerId, out var map) || map.Count == 0)
+                {
+                    return;
+                }
+                snapshot = map.Values.ToArray();
+            }
+
+            for (int i = 0; i < snapshot.Length; i++)
+            {
+                snapshot[i](message);
+            }
+        }
+
+        private static string BuildPlayerPoseJson(long poseSeq, bool hasPos, SandboxPlayerState state, bool hasRotation)
+        {
+            var obj = new JObject
+            {
+                ["type"] = "playerPose",
+                ["poseSeq"] = poseSeq,
+                ["hasPos"] = hasPos,
+                ["hasRotation"] = hasRotation
+            };
+
+            if (hasPos)
+            {
+                obj["pos"] = new JArray(
+                    SandboxWireNumbers.Position(state.X),
+                    SandboxWireNumbers.Position(state.Y),
+                    SandboxWireNumbers.Position(state.Z));
+            }
+            if (hasRotation)
+            {
+                obj["yaw"] = SandboxWireNumbers.Yaw(state.Yaw);
+                obj["pitch"] = SandboxWireNumbers.Pitch(state.Pitch);
+            }
+
+            return obj.ToString(Formatting.None);
+        }
+
+        private static bool TryReadFiniteDouble(JToken token, out double value)
+        {
+            value = 0.0;
+            if (token.Type != JTokenType.Integer && token.Type != JTokenType.Float)
+            {
+                return false;
+            }
+            try
+            {
+                value = token.Value<double>();
+                return SandboxWireNumbers.IsFinite(value);
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
+        }
+
+        private sealed class ViewerPoseEntry
+        {
+            public string Dimension { get; set; } = WorldConstants.DefaultDimension;
+            public double X { get; set; } = WorldConstants.DefaultSpawnX;
+            public double Y { get; set; } = WorldConstants.DefaultSpawnY;
+            public double Z { get; set; } = WorldConstants.DefaultSpawnZ;
+            public double Yaw { get; set; } = WorldConstants.DefaultSpawnYaw;
+            public double Pitch { get; set; } = WorldConstants.DefaultSpawnPitch;
+            public long PoseSeq { get; set; }
+
+            public SandboxPlayerState ToState() =>
+                new SandboxPlayerState(Dimension, X, Y, Z, Yaw, Pitch);
         }
     }
 }

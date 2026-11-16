@@ -61,6 +61,16 @@ namespace Code2Create.UnitySandbox.LocalDemo
         public SyncActiveStream ActiveStream;
     }
 
+    internal sealed class SyncPlayerPosePayload
+    {
+        public long PoseSeq;
+        public bool HasPos;
+        public Vector3 Pos;
+        public bool HasRotation;
+        public float Yaw;
+        public float Pitch;
+    }
+
     /// <summary>
     /// Browser WebGL and Editor/Standalone WebSocket client for /ws/sync.
     /// Walking and local demos keep working seamlessly when offline or reconnecting.
@@ -91,11 +101,13 @@ namespace Code2Create.UnitySandbox.LocalDemo
         internal long LastWorldEpoch { get; private set; }
         internal long LastSeq { get; private set; }
 
+        internal event Action Connected;
         internal event Action<SyncSnapshotPayload> SnapshotReceived;
         internal event Action<SyncBlockDeltaPayload> BlockDeltaReceived;
         internal event Action<SyncChatPayload> ChatReceived;
         internal event Action<SyncActiveStream> StreamUpdatedReceived;
         internal event Action<SyncPairResultPayload> PairResultReceived;
+        internal event Action<SyncPlayerPosePayload> PlayerPoseReceived;
         internal event Action<string> PasteReceived;
 
         internal SandboxSyncClient(string overrideUrl = null)
@@ -175,6 +187,21 @@ namespace Code2Create.UnitySandbox.LocalDemo
             return SendRawJson($"{{\"type\":\"chat\",\"viewerId\":\"{EscapeJson(viewerId)}\",\"message\":\"{EscapeJson(message)}\"}}");
         }
 
+        internal bool SendPlayerPose(Vector3 pos, float mcYaw, float mcPitch, long poseSeq)
+        {
+            string payload = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"type\":\"playerPose\",\"viewerId\":\"{0}\",\"poseSeq\":{1},\"pos\":[{2:R},{3:R},{4:R}],\"yaw\":{5:R},\"pitch\":{6:R}}}",
+                EscapeJson(viewerId),
+                poseSeq,
+                pos.x,
+                pos.y,
+                pos.z,
+                mcYaw,
+                mcPitch);
+            return SendRawJson(payload);
+        }
+
         private void TryConnect()
         {
             if (string.IsNullOrEmpty(wsUrl)) return;
@@ -202,6 +229,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 isConnecting = false;
                 IsConnected = true;
                 StatusLabel = "オンライン（自動同期中）";
+                Connected?.Invoke();
                 return;
             }
 
@@ -388,6 +416,27 @@ namespace Code2Create.UnitySandbox.LocalDemo
                     PairResultReceived?.Invoke(res);
                     break;
                 }
+
+                case "playerPose":
+                {
+                    Vector3 pos = Vector3.zero;
+                    bool hasPos = GetBool(root, "hasPos") && TryParseVector3(root, "pos", out pos);
+                    bool hasRotation = GetBool(root, "hasRotation");
+                    var pose = new SyncPlayerPosePayload
+                    {
+                        PoseSeq = GetLong(root, "poseSeq"),
+                        HasPos = hasPos,
+                        Pos = pos,
+                        HasRotation = hasRotation,
+                        Yaw = hasRotation ? GetFloat(root, "yaw") : 0f,
+                        Pitch = hasRotation ? GetFloat(root, "pitch") : 0f
+                    };
+                    if (pose.HasPos || pose.HasRotation)
+                    {
+                        PlayerPoseReceived?.Invoke(pose);
+                    }
+                    break;
+                }
             }
         }
 
@@ -431,6 +480,17 @@ namespace Code2Create.UnitySandbox.LocalDemo
             return true;
         }
 
+        private static bool TryParseVector3(Dictionary<string, object> parent, string key, out Vector3 result)
+        {
+            result = Vector3.zero;
+            if (!parent.TryGetValue(key, out var obj) || !(obj is List<object> arr) || arr.Count < 3) return false;
+            result = new Vector3(
+                Convert.ToSingle(arr[0], CultureInfo.InvariantCulture),
+                Convert.ToSingle(arr[1], CultureInfo.InvariantCulture),
+                Convert.ToSingle(arr[2], CultureInfo.InvariantCulture));
+            return true;
+        }
+
         private static Dictionary<string, object> GetDict(Dictionary<string, object> d, string key)
         {
             return d.TryGetValue(key, out var v) ? v as Dictionary<string, object> : null;
@@ -444,6 +504,11 @@ namespace Code2Create.UnitySandbox.LocalDemo
         private static long GetLong(Dictionary<string, object> d, string key)
         {
             return d.TryGetValue(key, out var v) && v != null ? Convert.ToInt64(v, CultureInfo.InvariantCulture) : 0L;
+        }
+
+        private static float GetFloat(Dictionary<string, object> d, string key)
+        {
+            return d.TryGetValue(key, out var v) && v != null ? Convert.ToSingle(v, CultureInfo.InvariantCulture) : 0f;
         }
 
         private static bool GetBool(Dictionary<string, object> d, string key)
