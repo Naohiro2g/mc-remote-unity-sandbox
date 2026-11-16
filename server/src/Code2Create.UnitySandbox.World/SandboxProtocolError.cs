@@ -126,12 +126,15 @@ namespace Code2Create.UnitySandbox.World
                     }
                 });
 
-        public static SandboxProtocolError WorkLimitExceeded(long requestedVolume, int maxVolume) =>
-            new SandboxProtocolError(-32000, "work limit exceeded", "work_limit_exceeded",
+        public static SandboxProtocolError WorkLimitExceeded() =>
+            new SandboxProtocolError(-32000, "work limit exceeded", "work_limit_exceeded");
+
+        public static SandboxProtocolError BlockCountLimitExceeded(long requestedVolume, int maxVolume) =>
+            new SandboxProtocolError(-32000, "block count limit exceeded", "block_count_limit_exceeded",
                 new Dictionary<string, object?>
                 {
-                    ["requested"] = requestedVolume,
-                    ["limit"] = maxVolume
+                    ["limit"] = maxVolume,
+                    ["requested"] = requestedVolume
                 });
 
         public static SandboxProtocolError MethodNotFound(string method) =>

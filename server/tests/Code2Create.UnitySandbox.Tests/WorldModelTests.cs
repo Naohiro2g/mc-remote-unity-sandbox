@@ -234,7 +234,7 @@ public class WorldModelTests
     }
 
     [Fact]
-    public void SetBlocksExceedingVolumeLimitReturnsWorkLimitExceededAtomically()
+    public void SetBlocksExceedingVolumeLimitReturnsBlockCountLimitExceededAtomically()
     {
         var world = new SandboxWorld();
         var ctx = new StreamBuildContext("stream-limit");
@@ -242,8 +242,13 @@ public class WorldModelTests
         // 33 * 32 * 32 = 33,792 > 32,768
         var ex = Assert.Throws<SandboxOperationException>(() =>
             world.SetBlocks(ctx, 0, 63, 0, 32, 94, 31, Spec("minecraft:stone")));
-        Assert.Equal("work_limit_exceeded", ex.Error.Reason);
+        Assert.Equal("block_count_limit_exceeded", ex.Error.Reason);
         Assert.Equal(-32000, ex.Error.Code);
+        var data = Assert.IsType<JObject>(ex.Error.ToJson()["data"]);
+        Assert.Equal("block_count_limit_exceeded", data["reason"]!.Value<string>());
+        Assert.Equal(32_768, data["limit"]!.Value<int>());
+        Assert.Equal(33_792L, data["requested"]!.Value<long>());
+        Assert.False(data.ContainsKey("violating"));
         Assert.Equal("minecraft:air", world.GetBlock(ctx, 0, 63, 0).BlockId);
     }
 

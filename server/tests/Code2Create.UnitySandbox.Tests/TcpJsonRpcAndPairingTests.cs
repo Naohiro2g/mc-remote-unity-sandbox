@@ -516,6 +516,19 @@ public class TcpJsonRpcAndPairingTests
             Assert.Equal(63, oobViolating["y"]!.Value<int>());
             Assert.Equal(-100, oobViolating["z"]!.Value<int>());
 
+            // block_count_limit_exceeded (> 32,768 blocks) check relative to [100, 0, -100]
+            var limitResp = await sessionRpc.CallAsync(120, "world.setBlocks", new JArray(0, 63, 0, 32, 94, 31, new JObject
+            {
+                ["block_id"] = "stone",
+                ["state"] = new JObject()
+            }), cts.Token);
+            Assert.Equal(-32000, limitResp["error"]!["code"]!.Value<int>());
+            var limitData = Assert.IsType<JObject>(limitResp["error"]!["data"]);
+            Assert.Equal("block_count_limit_exceeded", limitData["reason"]!.Value<string>());
+            Assert.Equal(32_768, limitData["limit"]!.Value<int>());
+            Assert.Equal(33_792L, limitData["requested"]!.Value<long>());
+            Assert.Null(limitData["violating"]);
+
             // chat.post request + FAST notification
             var chatResp = await sessionRpc.CallAsync(13, "chat.post", new JArray("Scratchからビルド開始"), cts.Token);
             Assert.Equal(JTokenType.Null, chatResp["result"]!.Type);

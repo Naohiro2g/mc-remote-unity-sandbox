@@ -109,7 +109,7 @@ namespace Code2Create.UnitySandbox.World
             var box = WorldBox.FromEndpoints(abs1, abs2);
             if (box.Volume > MaxSetBlocksVolume)
             {
-                throw new SandboxOperationException(SandboxProtocolError.WorkLimitExceeded(box.Volume, MaxSetBlocksVolume));
+                throw new SandboxOperationException(SandboxProtocolError.BlockCountLimitExceeded(box.Volume, MaxSetBlocksVolume));
             }
 
             var resolved = Registry.ResolveAndValidate(blockSpecToken, "params[6]");
