@@ -188,19 +188,18 @@ namespace Code2Create.UnitySandbox.Server.Tcp
                 using (client)
                 using (NetworkStream stream = client.GetStream())
                 using (var transport = new TcpLineTransport(stream))
+                using (var session = new SandboxRpcSession(
+                    world,
+                    bindingStore,
+                    pairingStore,
+                    tokenStore,
+                    displaySyncHub,
+                    clock,
+                    authEnforcement,
+                    serverName,
+                    buildRange,
+                    serverVersion))
                 {
-                    var session = new SandboxRpcSession(
-                        world,
-                        bindingStore,
-                        pairingStore,
-                        tokenStore,
-                        displaySyncHub,
-                        clock,
-                        authEnforcement,
-                        serverName,
-                        buildRange,
-                        serverVersion);
-
                     await session.RunAsync(transport, cancellationToken).ConfigureAwait(false);
                 }
             }

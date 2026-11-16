@@ -33,10 +33,16 @@ namespace Code2Create.UnitySandbox.World
     public sealed class BlockDefinition
     {
         public string BlockId { get; }
+        public bool IsPassable { get; }
         public IReadOnlyDictionary<string, BlockPropertyDefinition> Properties { get; }
         public BlockValue DefaultBlockValue { get; }
 
         public BlockDefinition(string blockId, params BlockPropertyDefinition[] properties)
+            : this(blockId, false, properties)
+        {
+        }
+
+        public BlockDefinition(string blockId, bool isPassable, params BlockPropertyDefinition[] properties)
         {
             if (string.IsNullOrEmpty(blockId) || !SandboxBlockRegistry.IsCanonicalResourceId(blockId))
             {
@@ -44,6 +50,7 @@ namespace Code2Create.UnitySandbox.World
             }
 
             BlockId = blockId;
+            IsPassable = isPassable;
             var map = new SortedDictionary<string, BlockPropertyDefinition>(StringComparer.Ordinal);
             var defaults = new SortedDictionary<string, BlockStateScalar>(StringComparer.Ordinal);
             foreach (var prop in properties)
@@ -76,13 +83,23 @@ namespace Code2Create.UnitySandbox.World
             return this;
         }
 
+        public bool IsPassable(string blockId)
+        {
+            if (blocks.TryGetValue(blockId, out var def))
+            {
+                return def.IsPassable;
+            }
+            return string.Equals(blockId, "minecraft:air", StringComparison.Ordinal);
+        }
+
         /// <summary>
         /// Creates a registry populated with the 10 basic Unity Sandbox blocks (human owner decision 2026-11-14).
+        /// Only minecraft:air is passable for world.getHeight (human owner decision 2026-11-16).
         /// </summary>
         public static SandboxBlockRegistry CreateBasic()
         {
             return new SandboxBlockRegistry()
-                .Register(new BlockDefinition("minecraft:air"))
+                .Register(new BlockDefinition("minecraft:air", isPassable: true))
                 .Register(new BlockDefinition("minecraft:grass_block",
                     new BlockPropertyDefinition(
                         "snowy",

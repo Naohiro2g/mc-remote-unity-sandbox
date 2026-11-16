@@ -23,6 +23,18 @@ namespace Code2Create.UnitySandbox.World
         public const int DefaultPairCodeTtlSeconds = 120;
         public const int DefaultSessionTokenTtlSeconds = 7200;
 
+        public const int DefaultEventRingMaxEvents = 256;
+        public const int DefaultEventRingMaxBytes = 262_144;
+        public const int MaxEventPollResponseBytes = 61_440;
+        public const int DefaultEventPollLimit = 64;
+        public const int MaxEventPollLimit = 256;
+
+        public const double DefaultSpawnX = 100.0;
+        public const double DefaultSpawnY = 63.04;
+        public const double DefaultSpawnZ = 86.0;
+        public const double DefaultSpawnYaw = 0.0;
+        public const double DefaultSpawnPitch = 8.0;
+
         public const int MinX = -200;
         public const int MaxX = 199;
         public const int MinZ = -200;
@@ -89,6 +101,19 @@ namespace Code2Create.UnitySandbox.World
 
         public static bool IsInBounds(Int3 p) =>
             IsInHorizontalBounds(p.X, p.Z) && IsInVerticalBounds(p.Y);
+
+        public static bool IsInPlayerHorizontalBounds(double x, double z) =>
+            !double.IsNaN(x) && !double.IsInfinity(x) &&
+            !double.IsNaN(z) && !double.IsInfinity(z) &&
+            x >= MinX && x < MaxX + 1 &&
+            z >= MinZ && z < MaxZ + 1;
+
+        public static bool IsInPlayerVerticalBounds(double y) =>
+            !double.IsNaN(y) && !double.IsInfinity(y) &&
+            y >= YSteveMin && y <= YSteveMax;
+
+        public static bool IsInPlayerBounds(double x, double y, double z) =>
+            IsInPlayerHorizontalBounds(x, z) && IsInPlayerVerticalBounds(y);
 
         /// <summary>
         /// Resolves the server version from a single source of truth:

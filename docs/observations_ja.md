@@ -123,6 +123,22 @@
   - 一時起動コンテナ（`127.0.0.1:18080->8080`, `127.0.0.1:25585->25585`）上で `GET /healthz` -> `{"status":"ok","version":"0.1.0","protocol":"23.3.0","worldEpoch":1,"seq":0,"connections":0,"tcpPort":25585}`、`HEAD /` -> `HTTP/1.1 200 OK`（`Content-Length: 6892`）を確認し、確認後に停止・削除。
 - 後続確認：human owner による PR head 上でのブラウザ操作・Scratch LAN／Python 結合確認、および `2321.3` ゲート時の `VERSION` 更新・GHCR 公開。
 
+## 2026-11-16 `block_count_limit_exceeded` 修正・`2321.3` 追加メソッド群・README刷新の検証
+
+- ナレッジ参照コミット：`fdc3c8c9b34d026cbe76a51d0789ba02858f05c6`（`00-hub/unity-sandbox-release-instructions_ja.md`「次にすること（2026-11-16）」および `2026-11-16-02`, `2026-11-16-03` 反映）
+- Unity：**6000.6.8f1 (237b6593792b)**、Linux、Built-in Render Pipeline、Input Manager、WebGL
+- README・構成図刷新：ホームページ（`https://mc-remote.com/`）リンク、マインクラフトサーバーと並列に並ぶ「世界」側の解説、並行世界 SVG 図（`docs/diagrams/mc-remote-parallel-worlds.svg`、headless Chrome で PNG 描画目視確認）を配置し、`README.md`・`docs/` の学習表現を `コーディング「で」学ぶ` / `学び方を学ぶ` へ統一。
+- `block_count_limit_exceeded`（`2026-11-16-02`、テスト先行）：
+  - 先に `WorldModelTests` と `TcpJsonRpcAndPairingTests` の期待値を `block_count_limit_exceeded`（`limit: 32768`, `requested: 33792`, `violating` なし）へ更新し、修正前の `dotnet test` で **2/19 件の意図的失敗**（`actual: "work_limit_exceeded"`）を確認。
+  - `SandboxProtocolError.BlockCountLimitExceeded` と `SandboxWorld.SetBlocks` を修正後に再実行し、**19/19 合格**（失敗 0、スキップ 0、期間 2s）を確認。
+- `2321.3` 追加メソッド群・`/ws/sync` 姿勢同期・`chat_posted` イベント：
+  - `world.getBlocks`、`world.getHeight`、`player.getPos` / `setPos` / `getPose` / `setPose` / `getDirection` / `setDirection`、`events.poll`（ペアリング済み画面の通常チャットを `chat_posted` として捕捉）、および Unity 側（`LocalSandboxWalker` / `SandboxSyncClient` / `LocalSandboxDemo`）の `playerPose` 同期を実装。
+  - `dotnet test server/Code2Create.UnitySandbox.sln` 全 **24/24** 合格（失敗 0、スキップ 0、期間 2s）、`dotnet build server/Code2Create.UnitySandbox.sln -c Release` 成功（警告 0・エラー 0）。
+- Unity 検証（Linux `6000.6.8f1 (237b6593792b)`）：
+  - `DemoEditor.Validate` -> `LOCAL_SANDBOX_VALIDATION_PASS: negative/relative coordinates, plots, dug terrain, six hit faces, ground, replace/remove, scene reset`
+  - `DemoPlaySmoke.Run`（クリーンコピー上で `-quit` なし実行後削除）-> `LOCAL_SANDBOX_PLAY_SMOKE_PASS: Start initialization, feet y=63, walking, ground collision, eye offset`
+  - `DemoEditor.BuildWebGL` -> `LOCAL_SANDBOX_WEBGL_BUILD_PASS`（`26499670 bytes`）
+
 - 日付・端末・OS・Unity／ブラウザの版：
 - 場面・ブロック数・変えた設定：
 - 試す前の予想：

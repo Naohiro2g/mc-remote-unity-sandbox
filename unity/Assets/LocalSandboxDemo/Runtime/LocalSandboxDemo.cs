@@ -40,6 +40,12 @@ namespace Code2Create.UnitySandbox.LocalDemo
         private Rect chatPanelRect;
         private string activeStreamId = string.Empty;
         private bool hasOnlineSnapshot;
+        private long lastAckedPoseSeq;
+        private bool hasSentPoseSinceConnect;
+        private Vector3 lastSentPos;
+        private float lastSentMcYaw;
+        private float lastSentMcPitch;
+        private float nextPoseSendAt;
 
         internal DemoBlocks Blocks => blocks;
         internal Camera View => walker.View;
@@ -104,11 +110,13 @@ namespace Code2Create.UnitySandbox.LocalDemo
         {
             if (syncClient != null) return;
             syncClient = new SandboxSyncClient();
+            syncClient.Connected += OnSyncConnected;
             syncClient.SnapshotReceived += OnSnapshotReceived;
             syncClient.BlockDeltaReceived += OnBlockDeltaReceived;
             syncClient.ChatReceived += OnChatReceived;
             syncClient.StreamUpdatedReceived += OnStreamUpdatedReceived;
             syncClient.PairResultReceived += OnPairResultReceived;
+            syncClient.PlayerPoseReceived += OnPlayerPoseReceived;
             syncClient.PasteReceived += OnPasteReceived;
             syncClient.Start();
         }
@@ -234,6 +242,24 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 }
             }
             Physics.SyncTransforms();
+        }
+
+        private void OnSyncConnected()
+        {
+            hasSentPoseSinceConnect = false;
+            nextPoseSendAt = 0f;
+            lastAckedPoseSeq = 0;
+        }
+
+        private void OnPlayerPoseReceived(SyncPlayerPosePayload pose)
+        {
+            if (pose == null) return;
+            lastAckedPoseSeq = pose.PoseSeq;
+            if (walker == null) return;
+
+            walker.ApplyRemotePose(pose.HasPos, pose.Pos, pose.HasRotation, pose.Yaw, pose.Pitch);
+            Physics.SyncTransforms();
+            SendCurrentPoseImmediate();
         }
 
         private void OnSnapshotReceived(SyncSnapshotPayload snap)
@@ -419,6 +445,40 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 }
             }
 #endif
+        }
+
+        private void LateUpdate()
+        {
+            if (walker == null || syncClient == null || !syncClient.IsConnected) return;
+            if (Time.unscaledTime < nextPoseSendAt) return;
+
+            walker.GetMinecraftPose(out Vector3 pos, out float mcYaw, out float mcPitch);
+            if (!hasSentPoseSinceConnect ||
+                (pos - lastSentPos).sqrMagnitude > 0.000001f ||
+                Mathf.Abs(Mathf.DeltaAngle(mcYaw, lastSentMcYaw)) > 0.01f ||
+                Mathf.Abs(mcPitch - lastSentMcPitch) > 0.01f)
+            {
+                SendPose(pos, mcYaw, mcPitch);
+            }
+        }
+
+        private void SendCurrentPoseImmediate()
+        {
+            if (walker == null || syncClient == null || !syncClient.IsConnected) return;
+            walker.GetMinecraftPose(out Vector3 pos, out float mcYaw, out float mcPitch);
+            SendPose(pos, mcYaw, mcPitch);
+        }
+
+        private void SendPose(Vector3 pos, float mcYaw, float mcPitch)
+        {
+            if (syncClient != null && syncClient.SendPlayerPose(pos, mcYaw, mcPitch, lastAckedPoseSeq))
+            {
+                lastSentPos = pos;
+                lastSentMcYaw = mcYaw;
+                lastSentMcPitch = mcPitch;
+                hasSentPoseSinceConnect = true;
+                nextPoseSendAt = Time.unscaledTime + 0.05f;
+            }
         }
 
         private bool IsPointOverUi(Vector2 guiPoint)
