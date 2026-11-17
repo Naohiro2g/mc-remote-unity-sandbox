@@ -156,6 +156,9 @@
 - `2321.2.0` 公開候補準備（ナレッジ `f72d5bf6e304e6a36f60b7ec9b6b300ce8b46926`、`2026-11-17-01`/`02` 反映）：
   - `VERSION` を `2321.2.0` へ更新、`THIRD-PARTY-NOTICES.txt`（MIT・SIL OFL 1.1・Newtonsoft.Json・.NET 9・Unity WebGL Player Runtime 帰属表示）を新設し `Dockerfile`（`/app/` および `/app/wwwroot/THIRD-PARTY-NOTICES.txt`）へ同梱（OCI `licenses` は `MIT` 維持）。
   - `dotnet test server/Code2Create.UnitySandbox.sln --nologo` -> **24/24** 合格、`DemoEditor.Validate` -> `LOCAL_SANDBOX_VALIDATION_PASS`、`DemoEditor.BuildWebGL` -> `LOCAL_SANDBOX_WEBGL_BUILD_PASS`（`31933678 bytes`、`ProjectSettings.bundleVersion: 2321.2.0` 反映）。
+- `2321.2.0` 候補作り直し（ナレッジ `77ecc7a1d71a3c88bcd9df5d2d62db7b9cc46160`、`2026-11-17-03` 反映）：
+  - `THIRD-PARTY-NOTICES.txt` のフォント節から Debian パッケージ著作権行を除外し、`LICENSE_NotoSansCJK.txt` 由来の SIL Open Font License Version 1.1 全文を収録。Unity 節からイメージ未収録ファイルを示す文言を除外。
+  - `Dockerfile` に `USER $APP_UID`（UID `1654`、非 root 実行）を追加（OCI `licenses` ラベルは `2026-11-17-03` に基づき `"MIT"` を維持）。WebGL 成果物は `6aeb741` ビルド（17 files / `31,934,139 bytes` = `31,933,678 bytes` + `ApplyResponsiveWebGlLayout` によるレスポンシブ CSS `461 bytes`）を再利用。
 
 - 日付・端末・OS・Unity／ブラウザの版：
 - 場面・ブロック数・変えた設定：

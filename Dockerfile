@@ -42,6 +42,8 @@ COPY --from=build /app/publish/ ./
 COPY ${WEBGL_DIST}/ ./wwwroot/
 COPY THIRD-PARTY-NOTICES.txt ./wwwroot/THIRD-PARTY-NOTICES.txt
 
+USER $APP_UID
+
 EXPOSE 8080/tcp 25585/tcp
 
 ENTRYPOINT ["dotnet", "/app/Code2Create.UnitySandbox.Server.dll", "--url", "http://0.0.0.0:8080", "--web-root", "/app/wwwroot", "--tcp-host", "0.0.0.0", "--tcp-port", "25585"]
