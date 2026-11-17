@@ -14,6 +14,9 @@ namespace Code2Create.UnitySandbox.LocalDemo
         private const float WalkSpeed = 6f;
         private const float FlyHorizontalSpeed = 8.5f;
         private const float FlyVerticalSpeed = 7.5f;
+        private const float FastWalkMultiplier = 2.0f;
+        private const float FastFlyHorizontalMultiplier = 2.2f;
+        private const float FastFlyVerticalMultiplier = 2.0f;
 
         private CharacterController body;
         private Vector3 spawn;
@@ -27,6 +30,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
         internal Camera View { get; private set; }
         internal bool IsTypingChat { get; set; }
         internal bool IsFlying => isFlying;
+        internal bool IsFastSpeed { get; set; }
 
         internal void Initialize(Vector3Int origin)
         {
@@ -90,7 +94,9 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
             var horizontal = Input.GetAxisRaw("Horizontal");
             var forward = Input.GetAxisRaw("Vertical");
-            float moveSpeed = isFlying ? FlyHorizontalSpeed : WalkSpeed;
+            float moveSpeed = isFlying
+                ? FlyHorizontalSpeed * (IsFastSpeed ? FastFlyHorizontalMultiplier : 1f)
+                : WalkSpeed * (IsFastSpeed ? FastWalkMultiplier : 1f);
             var movement = transform.TransformDirection(Vector3.ClampMagnitude(new Vector3(horizontal, 0, forward), 1)) * moveSpeed;
 
             if (Input.GetKeyDown(KeyCode.Space))
@@ -128,7 +134,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 float verticalDir = 0f;
                 if (Input.GetKey(KeyCode.Space) && transform.position.y < 340f) verticalDir += 1f;
                 if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) verticalDir -= 1f;
-                verticalSpeed = verticalDir * FlyVerticalSpeed;
+                verticalSpeed = verticalDir * FlyVerticalSpeed * (IsFastSpeed ? FastFlyVerticalMultiplier : 1f);
             }
             else
             {
@@ -141,7 +147,10 @@ namespace Code2Create.UnitySandbox.LocalDemo
             }
 
             movement.y = verticalSpeed;
-            body.Move(movement * Time.deltaTime);
+            if (!(isFlying && movement.sqrMagnitude == 0f))
+            {
+                body.Move(movement * Time.deltaTime);
+            }
 
             if (transform.position.y < -70 || Mathf.Abs(transform.position.x) > 205 || Mathf.Abs(transform.position.z) > 205)
             {
@@ -167,8 +176,9 @@ namespace Code2Create.UnitySandbox.LocalDemo
         internal void WarpToPlot(int plotIndex)
         {
             var origin = DemoCoordinates.PlotOrigin(plotIndex);
-            var targetPos = new Vector3(origin.x, 63.04f, origin.z - 14);
-            var lookTarget = new Vector3(origin.x, 64.5f, origin.z);
+            var targetPos = new Vector3(origin.x + 5f, 96f, origin.z - 40f);
+            var lookTarget = new Vector3(origin.x, 96f, origin.z);
+            isFlying = true;
             WarpTo(targetPos, lookTarget);
         }
 

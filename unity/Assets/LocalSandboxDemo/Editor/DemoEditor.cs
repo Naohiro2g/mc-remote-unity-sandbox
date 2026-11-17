@@ -163,7 +163,37 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 Require(demo.Blocks.Count == 150, "wall and staircase");
                 demo.Populate(false);
                 Require(demo.Blocks.Count == 120, "scene reset");
-                Debug.Log("LOCAL_SANDBOX_VALIDATION_PASS: negative/relative coordinates, plots, dug terrain, six hit faces, ground, replace/remove, scene reset");
+
+                // Warp to plot landing (5, 96, -40) facing virtual origin (0, 96, 0) in flying mode
+                var walker = demo.GetComponentInChildren<LocalSandboxWalker>();
+                Require(walker != null, "walker exists");
+                walker.WarpToPlot(4);
+                Require(walker.IsFlying, "warp enables flying");
+                Require(DemoCoordinates.Cell(walker.transform.position) == new Vector3Int(5, 96, -40), "warp plot 4 pos");
+                Vector3 toPlot4Origin = (new Vector3(0f, 96f, 0f) - demo.View.transform.position).normalized;
+                Require(Vector3.Dot(demo.View.transform.forward, toPlot4Origin) > 0.999f, "warp plot 4 look at origin");
+                walker.WarpToPlot(0);
+                Require(DemoCoordinates.Cell(walker.transform.position) == new Vector3Int(-95, 96, -140), "warp plot 0 pos");
+                walker.ResetPose();
+                Require(!walker.IsFlying, "reset clears flying");
+
+                // Placement highlight stays for 0.5s and honors on/off toggle
+                Require(demo.Blocks.HighlightEnabled, "highlight enabled by default");
+                var hlCell = new Vector3Int(10, 64, 10);
+                demo.Blocks.ApplyBox(hlCell, hlCell, "minecraft:gold_block", trackPlacement: true, countAsModified: true);
+                Require(demo.Blocks.IsHighlightActive, "highlight shown on placement");
+                demo.Blocks.UpdateHighlight(0.4f);
+                Require(demo.Blocks.IsHighlightActive, "highlight active at 0.4s");
+                demo.Blocks.UpdateHighlight(0.2f);
+                Require(!demo.Blocks.IsHighlightActive, "highlight expires after 0.5s");
+                demo.Blocks.HighlightEnabled = false;
+                var hlCell2 = new Vector3Int(11, 64, 10);
+                demo.Blocks.ApplyBox(hlCell2, hlCell2, "minecraft:iron_block", trackPlacement: true, countAsModified: true);
+                Require(!demo.Blocks.IsHighlightActive && demo.Blocks.LastPlacedCell == hlCell2, "highlight off suppresses glow but tracks cell");
+                demo.Blocks.HighlightEnabled = true;
+                demo.Populate(false);
+
+                Debug.Log("LOCAL_SANDBOX_VALIDATION_PASS: negative/relative coordinates, plots, warp, highlight, dug terrain, six hit faces, ground, replace/remove, scene reset");
             }
             finally
             {

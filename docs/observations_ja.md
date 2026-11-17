@@ -139,6 +139,21 @@
   - `DemoPlaySmoke.Run`（クリーンコピー上で `-quit` なし実行後削除）-> `LOCAL_SANDBOX_PLAY_SMOKE_PASS: Start initialization, feet y=63, walking, ground collision, eye offset`
   - `DemoEditor.BuildWebGL` -> `LOCAL_SANDBOX_WEBGL_BUILD_PASS`（`26499670 bytes`）
 
+## 2026-11-17 UI/UX改善・等幅フォント・日英切替・ワープ上空化・ピンク配置発光の検証
+
+- Unity：**6000.6.8f1**、Linux、Built-in Render Pipeline、Input Manager、WebGL
+- 等幅フォント：`NotoSansCJK-Regular.ttc`（`--font-number=5`、`Noto Sans Mono CJK JP`）サブセット（`11,128,896 bytes`）へ更新し、パネル・入力欄・3D 区画看板を含め等幅表示化。
+- UI/UX・多言語・操作改善：
+  - 左上パネルに常時表示の大きめ太字等幅座標行（`[脚]`/`[照準]` ⇔ `[Legs]`/`[Target]`）・対象切替・移動速度切替（`速度×1`/`速度×2`）・`たたむ`/`ひらく` を配置し、展開時に詳細行・`再同期`・`全画面`・`EN`/`JA` 日英切替を表示。
+  - 左下チャットを固定太字タイトル・ピクセルクリップ／ホイール対応ログ領域（最大80行）・固定入力行の3領域へ完全分離し、`/`（先頭 `/` 入力済み・キャレット末尾）・`T`・全域クリック・送信後フォーカス維持に対応。
+  - 右下パネルの高さを左下チャットと全画面幅で統一し、各区画ワープを上空相対 `(5, 96, -40)`（仮想原点 `(0, 96, 0)` 向き・フライト状態）へ変更、ピンク色 0.5 秒配置発光の `発光:ON`/`発光:OFF` トグル・4行キー案内を追加。
+  - WebGL プラグインへ `beforeunload` ガード・ブラウザショートカット抑止・フルスクリーン時 `navigator.keyboard.lock` を追加。
+- 検証結果：
+  - `dotnet test server/Code2Create.UnitySandbox.sln --nologo` -> **24/24** 合格（失敗 0、スキップ 0）
+  - `DemoEditor.Validate` -> `LOCAL_SANDBOX_VALIDATION_PASS: negative/relative coordinates, plots, warp, highlight, dug terrain, six hit faces, ground, replace/remove, scene reset`
+  - `DemoPlaySmoke.Run`（クリーンコピー上で `-quit` なし実行後削除）-> `LOCAL_SANDBOX_PLAY_SMOKE_PASS: Start initialization, feet y=63, walking, ground collision, eye offset`
+  - `DemoEditor.BuildWebGL` -> `LOCAL_SANDBOX_WEBGL_BUILD_PASS`（`31932819 bytes`）
+
 - 日付・端末・OS・Unity／ブラウザの版：
 - 場面・ブロック数・変えた設定：
 - 試す前の予想：

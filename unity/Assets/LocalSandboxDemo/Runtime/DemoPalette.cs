@@ -106,10 +106,10 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 mainTexture = DottedLineTexture()
             });
 
-            Highlight = Own(new Material(shader) { name = "Demo highlight", color = new Color(1f, .92f, .25f, .38f) });
+            Highlight = Own(new Material(shader) { name = "Demo highlight", color = new Color(1f, 0.28f, 0.72f, 0.44f) });
             ConfigureTransparent(Highlight);
             Highlight.EnableKeyword("_EMISSION");
-            Highlight.SetColor("_EmissionColor", new Color(1f, .85f, .15f) * .6f);
+            Highlight.SetColor("_EmissionColor", new Color(1f, 0.22f, 0.68f) * 0.65f);
         }
 
         internal Material this[DemoMaterial kind] => materials[(int)kind];

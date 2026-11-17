@@ -3,7 +3,8 @@ var SandboxWebSocketPlugin = {
         socket: null,
         events: [],
         viewerId: null,
-        pasteBound: false
+        pasteBound: false,
+        guardsBound: false
     },
 
     SandboxWsGetOrCreateViewerId: function () {
@@ -161,6 +162,122 @@ var SandboxWebSocketPlugin = {
             try { sandboxWsState.socket.close(); } catch (e) {}
             sandboxWsState.socket = null;
         }
+    },
+
+    SandboxWsInstallGuards: function () {
+        if (sandboxWsState.guardsBound || typeof window === "undefined") return;
+        sandboxWsState.guardsBound = true;
+
+        window.addEventListener("beforeunload", function (e) {
+            e.preventDefault();
+            e.returnValue = "";
+            return "";
+        });
+
+        window.addEventListener("keydown", function (e) {
+            if (!e) return;
+            if (e.key === "F5" || (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight"))) {
+                e.preventDefault();
+                return;
+            }
+            if (e.ctrlKey || e.metaKey) {
+                var k = (e.key || "").toLowerCase();
+                if (k === "c" || k === "v" || k === "x" || k === "a" || k === "z" || k === "y") {
+                    return;
+                }
+                if (k === "w" || k === "t" || k === "n" || k === "r" || k === "s" || k === "p" ||
+                    k === "f" || k === "g" || k === "h" || k === "j" || k === "u" || k === "o" || k === "d") {
+                    e.preventDefault();
+                }
+            }
+        }, { capture: true });
+
+        if (typeof document !== "undefined" && document.addEventListener) {
+            document.addEventListener("fullscreenchange", function () {
+                if (typeof navigator === "undefined" || !navigator.keyboard) return;
+                try {
+                    if (document.fullscreenElement || document.webkitFullscreenElement) {
+                        if (navigator.keyboard.lock) {
+                            var lockPromise = navigator.keyboard.lock(["KeyW", "KeyT", "KeyN", "KeyR"]);
+                            if (lockPromise && typeof lockPromise.catch === "function") {
+                                lockPromise.catch(function () {});
+                            }
+                        }
+                    } else if (navigator.keyboard.unlock) {
+                        navigator.keyboard.unlock();
+                    }
+                } catch (e) {}
+            });
+        }
+    },
+
+    SandboxWsToggleFullscreen: function () {
+        if (typeof document === "undefined") return;
+        try {
+            var current = document.fullscreenElement || document.webkitFullscreenElement;
+            if (!current) {
+                var el = document.documentElement;
+                if (el && el.requestFullscreen) {
+                    var req = el.requestFullscreen();
+                    if (req && typeof req.then === "function") {
+                        req.then(function () {
+                            if (typeof navigator !== "undefined" && navigator.keyboard && navigator.keyboard.lock) {
+                                var lp = navigator.keyboard.lock(["KeyW", "KeyT", "KeyN", "KeyR"]);
+                                if (lp && typeof lp.catch === "function") lp.catch(function () {});
+                            }
+                        }).catch(function () {});
+                    }
+                } else if (el && el.webkitRequestFullscreen) {
+                    el.webkitRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    var ex = document.exitFullscreen();
+                    if (ex && typeof ex.catch === "function") ex.catch(function () {});
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            }
+        } catch (e) {}
+    },
+
+    SandboxWsGetInitialLanguage: function () {
+        var resolved = "ja";
+        try {
+            var q = "";
+            if (typeof window !== "undefined" && window.location) {
+                var params = new URLSearchParams(window.location.search || "");
+                q = params.get("lang") || "";
+            }
+            var saved = "";
+            if (!q && typeof window !== "undefined" && window.localStorage) {
+                try {
+                    saved = window.localStorage.getItem("mc_remote_sandbox_lang") || "";
+                } catch (e) {}
+            }
+            var nav = "";
+            if (!q && !saved && typeof navigator !== "undefined") {
+                nav = navigator.language || "";
+            }
+            var candidate = (q || saved || nav || "ja").toLowerCase();
+            if (candidate.indexOf("en") === 0) {
+                resolved = "en";
+            }
+        } catch (e) {
+            resolved = "ja";
+        }
+        var len = lengthBytesUTF8(resolved) + 1;
+        var ptr = _malloc(len);
+        stringToUTF8(resolved, ptr, len);
+        return ptr;
+    },
+
+    SandboxWsSaveLanguage: function (langPtr) {
+        if (typeof window === "undefined" || !window.localStorage) return;
+        try {
+            var lang = UTF8ToString(langPtr) === "en" ? "en" : "ja";
+            window.localStorage.setItem("mc_remote_sandbox_lang", lang);
+        } catch (e) {}
     }
 };
 

@@ -11,11 +11,28 @@ namespace Code2Create.UnitySandbox.LocalDemo
         private readonly List<BoxEntry> boxes = new List<BoxEntry>();
         private readonly HashSet<Vector3Int> revealedEggCenters = new HashSet<Vector3Int>();
 
+        private const float HighlightDurationSeconds = 0.5f;
+
         private GameObject highlightCube;
         private float highlightRemaining;
+        private bool highlightEnabled = true;
 
         internal int Count { get; private set; }
         internal Vector3Int? LastPlacedCell { get; private set; }
+        internal bool IsHighlightActive => highlightCube != null && highlightCube.activeSelf;
+        internal bool HighlightEnabled
+        {
+            get => highlightEnabled;
+            set
+            {
+                highlightEnabled = value;
+                if (!highlightEnabled)
+                {
+                    highlightRemaining = 0f;
+                    if (highlightCube != null) highlightCube.SetActive(false);
+                }
+            }
+        }
 
         internal DemoBlocks(Transform parent, DemoPalette palette)
         {
@@ -84,7 +101,10 @@ namespace Code2Create.UnitySandbox.LocalDemo
                         (min.x + max.x) / 2,
                         max.y,
                         (min.z + max.z) / 2);
-                    ShowHighlight(min, max);
+                    if (highlightEnabled)
+                    {
+                        ShowHighlight(min, max);
+                    }
                 }
             }
             else if (trackPlacement)
@@ -150,7 +170,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             highlightCube.transform.position = center;
             highlightCube.transform.localScale = size;
             highlightCube.SetActive(true);
-            highlightRemaining = 2.0f;
+            highlightRemaining = HighlightDurationSeconds;
         }
 
         private void RevealNearbyEasterEggs(Vector3Int cutMin, Vector3Int cutMax)

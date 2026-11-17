@@ -11,7 +11,7 @@
 2. **`server/src/Code2Create.UnitySandbox.Server` (`net9.0`)**
    - Unity Web の静的配信（`--web-root`）、`/ws/sync` の表示同期 WebSocket サーバー（`DisplaySyncHub`, `ViewerBindingAndPairing`）、および改行区切り JSON-RPC 2.0 の TCP リスナー（`TcpJsonRpcServer`, `SandboxRpcSession`、CLI 既定 `--tcp-port 25585`）を統合する。
 3. **`unity/` (`6000.6.8f1`)**
-   - WebGL／ローカル両対応の描画・歩行・操作クライアント（`LocalSandboxDemo`, `DemoBlocks`, `DemoPalette`, `LocalSandboxWalker`, `SandboxSyncClient`, `SandboxWebSocket.jslib`）。
+   - WebGL／ローカル両対応の描画・歩行・操作クライアント（`LocalSandboxDemo`, `DemoBlocks`, `DemoPalette`, `DemoLocalization`, `LocalSandboxWalker`, `SandboxSyncClient`, `SandboxWebSocket.jslib`）。
 
 ## 2. TCP JSON-RPC 2.0 受付契約（順番 4、`2026-11-14-01` 〜 `2026-11-14-05` 準拠）
 
@@ -70,9 +70,9 @@ Bridge 経由の Scratch および一般の McRemote クライアント向けに
 ## 5. 同梱日本語フォントの出どころと記録
 
 - **収録ファイル**: `unity/Assets/LocalSandboxDemo/Resources/Fonts/NotoSansJP-Subset.ttf`
-- **サイズ**: `4,947,692` bytes
+- **サイズ**: `11,128,896` bytes
 - **ライセンス**: `SIL Open Font License 1.1`（全文を `unity/Assets/LocalSandboxDemo/Resources/Fonts/LICENSE_NotoSansCJK.txt` に同梱、`14,712` bytes）
-- **生成元**: Linux パッケージ `fonts-noto-cjk` の `/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc` (`font-number=0`) から、`pyftsubset` により ASCII・ひらがな・カタカナ・約物・罫線・常用／JIS第一水準等の日本語範囲（`U+0020-007E, U+00A0-00FF, U+2010-203B, U+2190-2199, U+2500-257F, U+3000-303F, U+3040-309F, U+30A0-30FF, U+31F0-31FF, U+4E00-9FFF, U+FF00-FFEF`）を抽出して軽量化。
+- **生成元**: Linux パッケージ `fonts-noto-cjk` の `/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc` (`font-number=5`、`Noto Sans Mono CJK JP`) から、`pyftsubset` により ASCII・ひらがな・カタカナ・約物・罫線・記号・常用／JIS第一水準等の日本語範囲（`U+0020-007E, U+00A0-00FF, U+2010-203B, U+2190-2199, U+2500-25FF, U+3000-303F, U+3040-309F, U+30A0-30FF, U+31F0-31FF, U+4E00-9FFF, U+FF00-FFEF`）を抽出して等幅表示対応・軽量化。
 
 ## 6. バージョン単一ソース（`VERSION`）とコンテナイメージ
 
