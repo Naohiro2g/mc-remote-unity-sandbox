@@ -27,9 +27,13 @@ namespace Code2Create.UnitySandbox.LocalDemo
         private LocalSandboxWalker walker;
         private SandboxSyncClient syncClient;
 
+        private const float DoubleTapThreshold = 0.35f;
+        private const float CoordShadowOffsetPx = 0.8f;
+
         private Font loadedFont;
         private GUIStyle textStyle;
         private GUIStyle coordTextStyle;
+        private GUIStyle coordShadowStyle;
         private GUIStyle smallTextStyle;
         private GUIStyle chatTitleStyle;
         private GUIStyle chatLogStyle;
@@ -46,7 +50,6 @@ namespace Code2Create.UnitySandbox.LocalDemo
         private bool hudExpanded = true;
         private bool hudTargetMode;
         private float lastQDownTime = -10f;
-        private const float DoubleTapThreshold = 0.35f;
         private string chatInput = string.Empty;
         private bool focusChatRequested;
         private bool unfocusChatRequested;
@@ -56,6 +59,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
         private readonly List<string> chatLog = new List<string>();
         private readonly List<float> chatLineHeights = new List<float>();
         private readonly GUIContent reusableChatContent = new GUIContent();
+        private readonly GUIContent reusableHudContent = new GUIContent();
         private float chatScrollOffsetPx;
         private readonly List<Rect> uiHitRects = new List<Rect>();
         private Rect chatPanelRect;
@@ -595,7 +599,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             coordTextStyle = new GUIStyle(GUI.skin.label)
             {
                 font = loadedFont,
-                fontSize = compact ? 13 : 15,
+                fontSize = compact ? 16 : 20,
                 fontStyle = FontStyle.Bold,
                 wordWrap = false,
                 richText = true,
@@ -603,6 +607,9 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 padding = new RectOffset(1, 1, 1, 1)
             };
             coordTextStyle.normal.textColor = Color.white;
+
+            coordShadowStyle = new GUIStyle(coordTextStyle) { richText = false };
+            coordShadowStyle.normal.textColor = new Color(0f, 0f, 0f, 0.72f);
 
             smallTextStyle = new GUIStyle(GUI.skin.label)
             {
@@ -650,14 +657,14 @@ namespace Code2Create.UnitySandbox.LocalDemo
             if (darkBoxStyle == null)
             {
                 var bg = new Texture2D(1, 1);
-                bg.SetPixel(0, 0, new Color(.08f, .1f, .14f, .42f));
+                bg.SetPixel(0, 0, new Color(.08f, .1f, .14f, .55f));
                 bg.Apply();
                 darkBoxStyle = new GUIStyle(GUI.skin.box);
                 darkBoxStyle.normal.background = bg;
             }
         }
 
-        private string BuildMcRemoteHudLine()
+        private void BuildMcRemoteHudLines(out string richLine, out string plainLine)
         {
             string absText;
             string relText;
@@ -676,7 +683,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             else
             {
                 absHex = ColorUtility.ToHtmlStringRGB(Color.HSVToRGB(40f / 360f, 0.90f, 0.95f));
-                relHex = ColorUtility.ToHtmlStringRGB(Color.HSVToRGB(320f / 360f, 0.75f, 0.96f));
+                relHex = ColorUtility.ToHtmlStringRGB(Color.HSVToRGB(320f / 360f, 0.48f, 1.00f));
                 var ray = View.ViewportPointToRay(new Vector3(.5f, .5f, 0f));
                 if (Physics.Raycast(ray, out var hit, 120f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
                 {
@@ -701,10 +708,11 @@ namespace Code2Create.UnitySandbox.LocalDemo
             string modeHex = hudTargetMode ? "FFD166" : "B8E1FF";
             string targetLabel = DemoText.CoordTargetName(currentLang, hudTargetMode);
 
-            return $"<color=#{modeHex}>[{targetLabel}]</color> " +
-                   $"<color=#{absHex}>{absText}</color> <color=#B0B8C0>/</color> " +
-                   $"<color=#{relHex}>{relText}</color> <color=#B0B8C0>/</color> " +
-                   $"<color=#{markHex}><b>#</b></color><color=#{dirHex}>{dirLabel}</color><color=#{markHex}><b>#</b></color>";
+            plainLine = $"[{targetLabel}] {absText} / {relText} / #{dirLabel}#";
+            richLine = $"<color=#{modeHex}>[{targetLabel}]</color> " +
+                       $"<color=#{absHex}>{absText}</color> <color=#B0B8C0>/</color> " +
+                       $"<color=#{relHex}>{relText}</color> <color=#B0B8C0>/</color> " +
+                       $"<color=#{markHex}>#</color><color=#{dirHex}>{dirLabel}</color><color=#{markHex}>#</color>";
         }
 
         private void OnGUI()
@@ -764,8 +772,8 @@ namespace Code2Create.UnitySandbox.LocalDemo
             float margin = narrow ? 6f : 8f;
 
             // 左上：常時表示の大きめ太字等幅座標行＋（展開時のみ）詳細ステータス・操作ボタン
-            float topWidth = Mathf.Min(narrow ? 620f : 700f, Screen.width - margin * 2f);
-            float topHeight = hudExpanded ? (narrow ? 62f : 68f) : (narrow ? 34f : 38f);
+            float topWidth = Mathf.Min(narrow ? 660f : 760f, Screen.width - margin * 2f);
+            float topHeight = hudExpanded ? (narrow ? 66f : 74f) : (narrow ? 38f : 44f);
             var topRect = new Rect(margin, margin, topWidth, topHeight);
 
             // 左右下パネルはウィンドウ幅に関わらず高さを統一する
@@ -819,7 +827,17 @@ namespace Code2Create.UnitySandbox.LocalDemo
             GUILayout.BeginArea(new Rect(topRect.x + 6f, topRect.y + 4f, topRect.width - 12f, topRect.height - 8f));
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label(BuildMcRemoteHudLine(), coordTextStyle);
+            BuildMcRemoteHudLines(out string hudRich, out string hudPlain);
+            reusableHudContent.text = hudPlain;
+            Rect coordRect = GUILayoutUtility.GetRect(reusableHudContent, coordShadowStyle);
+            GUI.Label(
+                new Rect(coordRect.x + CoordShadowOffsetPx, coordRect.y + CoordShadowOffsetPx, coordRect.width + 4f, coordRect.height),
+                hudPlain,
+                coordShadowStyle);
+            GUI.Label(
+                new Rect(coordRect.x, coordRect.y, coordRect.width + 4f, coordRect.height),
+                hudRich,
+                coordTextStyle);
             GUILayout.FlexibleSpace();
             if (GUILayout.Button(DemoText.TargetToggleButton(currentLang, hudTargetMode), buttonStyle, GUILayout.Width(narrow ? 72f : 82f)))
             {
