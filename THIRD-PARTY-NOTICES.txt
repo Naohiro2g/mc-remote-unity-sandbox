@@ -1,0 +1,90 @@
+THIRD-PARTY NOTICES AND LICENSES
+mc-remote-unity-sandbox
+
+This distribution (container image / WebGL build) includes the following
+first-party and third-party components.
+
+================================================================================
+1. mc-remote-unity-sandbox (First-Party Server, World Model, Scripts & Unity Demo)
+================================================================================
+MIT License
+
+Copyright (c) 2026 Naohiro Tsuji
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+2. Bundled Monospace Japanese Font (Noto Sans Mono CJK JP subset)
+   File: wwwroot/Build (embedded in WebGL assets) / unity/Assets/LocalSandboxDemo/Resources/Fonts/NotoSansJP-Subset.ttf
+================================================================================
+Copyright 2014-2021 Adobe (http://www.adobe.com/).
+Copyright 2010-2022 Google LLC.
+
+Extracted from /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc (font-number=5).
+Licensed under the SIL Open Font License, Version 1.1:
+
+License: SIL-1.1
+
+Files: debian/*
+Copyright: 2013, Vasudev Kamath <kamathvasudev@gmail.com>
+           2013-2015, Jonas Smedegaard <dr@jones.dk>
+           2015-2022, ChangZhuo Chen (陳昌倬) <czchen@debian.org>
+
+================================================================================
+3. Newtonsoft.Json (13.0.4)
+================================================================================
+The MIT License (MIT)
+
+Copyright (c) 2007 James Newton-King
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+================================================================================
+4. .NET Runtime / ASP.NET Core Runtime 9.0 & Base Container Packages
+================================================================================
+.NET and ASP.NET Core Runtime libraries are licensed under the MIT License
+(Copyright (c) .NET Foundation and Contributors).
+Debian base OS packages in the container runtime image retain their respective
+copyright notices under /usr/share/doc/*/copyright inside the image.
+
+================================================================================
+5. Unity WebGL Player Runtime (Unity 6000.6.8f1)
+   Files: wwwroot/Build/WebGL.loader.js, WebGL.framework.js, WebGL.wasm
+================================================================================
+Contains the Unity WebGL Player runtime components generated with Unity 6000.6.8f1.
+Copyright (c) Unity Technologies ApS and its licensors. All rights reserved.
+Redistributed in accordance with the Unity Terms of Service / Unity Companion
+License and bundled third-party notices for Unity WebGL runtime components.
+Note: The Unity WebGL Player runtime is proprietary / separately licensed and is
+NOT licensed under the MIT License.

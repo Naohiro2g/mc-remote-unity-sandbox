@@ -134,7 +134,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             walker = player.AddComponent<LocalSandboxWalker>();
             walker.Initialize(displayOrigin);
 
-            string ver = string.IsNullOrEmpty(Application.version) ? "0.1.0" : Application.version;
+            string ver = string.IsNullOrEmpty(Application.version) ? "2321.2.0" : Application.version;
             AddChatLine(DemoText.WelcomeMessage(currentLang, ver));
         }
 

@@ -1,6 +1,6 @@
 # Unity箱庭：表示同期とローカルWebビルド設計
 
-> 参照ナレッジコミット: `fdc3c8c9b34d026cbe76a51d0789ba02858f05c6` (`2026-11-14-01` .. `2026-11-16-03` 反映)\
+> 参照ナレッジコミット: `f72d5bf6e304e6a36f60b7ec9b6b300ce8b46926` (`2026-11-14-01` .. `2026-11-17-02` 反映)\
 > 確認Unity版: `6000.6.8f1 (237b6593792b)` (Built-in Render Pipeline, WebGL)
 
 ## 1. 構成と責務の分離
@@ -76,8 +76,8 @@ Bridge 経由の Scratch および一般の McRemote クライアント向けに
 
 ## 6. バージョン単一ソース（`VERSION`）とコンテナイメージ
 
-- **バージョン管理（`2026-11-15-04`）**: リポジトリ直下の `VERSION`（開発中は `0.1.0`、`2321.3` ゲート通過時に `2321.3.0` へ更新）を単一ソースとし、サーバーの `hello.server.version` / `/healthz`、Unity WebGL ビルド時の `PlayerSettings.bundleVersion`（`DemoEditor.BuildWebGL`）、コンテナの OCI ラベル（`org.opencontainers.image.version`）へ伝搬する。
-- **コンテナ構成（`2026-11-15-05`）**: `Dockerfile` は `.NET` サーバーの `Release` publish 出力と WebGL 静的成果物（`/app/wwwroot`）を単一ランタイムコンテナへ同梱する。
+- **バージョン管理（`2026-11-15-04`, `2026-11-17-01`）**: リポジトリ直下の `VERSION`（`2321.2.0`）を単一ソースとし、サーバーの `hello.server.version` / `/healthz`、Unity WebGL ビルド時の `PlayerSettings.bundleVersion`（`DemoEditor.BuildWebGL`）、コンテナの OCI ラベル（`org.opencontainers.image.version`）へ伝搬する。
+- **コンテナ構成（`2026-11-15-05`, `2026-11-17-02`）**: `Dockerfile` は `.NET` サーバーの `Release` publish 出力、WebGL 静的成果物（`/app/wwwroot`）、`LICENSE`、および `THIRD-PARTY-NOTICES.txt`（`/app/THIRD-PARTY-NOTICES.txt` と配信ルート `/app/wwwroot/THIRD-PARTY-NOTICES.txt`）を単一ランタイムコンテナへ同梱する。
   - **公開ポート**: `8080/tcp`（HTTP WebGL + `/ws/sync` + `/healthz`）、`25585/tcp`（TCP JSON-RPC 2.0）。
   - **ボリューム**: 不要（状態・トークン・紐付けはすべてインメモリ保持、`2026-11-15-06`）。
-  - **ビルド手順**: `scripts/build-container.sh` は WebGL ビルド＋ `docker build`（OCI ラベル付与）をローカル実行するスクリプトであり、GHCR への `push` は行わない。
+  - **候補タグ運用（`2026-11-17-02`）**: `scripts/build-container.sh` は `VERSION` を確定した GitHub コミットから `ghcr.io/naohiro2g/mc-remote-unity-sandbox:candidate-<7桁>` としてビルドし、凍結前公開タグでの GHCR 照合後に同一ダイジェストへ `v2321.2.0` を付与する（通常のローカル `build-container.sh` 自体は自動 `push` を行わない）。

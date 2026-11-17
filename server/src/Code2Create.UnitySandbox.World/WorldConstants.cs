@@ -17,7 +17,7 @@ namespace Code2Create.UnitySandbox.World
         public const string McVersion = "1.21.11";
         public const string DefaultDimension = "minecraft:overworld";
         public const string DefaultServerName = "mc-remote-unity-sandbox";
-        public const string DefaultServerVersion = "0.1.0";
+        public const string DefaultServerVersion = "2321.2.0";
         public const int DefaultTcpPort = 25585;
         public const int DefaultBuildRange = 1000;
         public const int DefaultPairCodeTtlSeconds = 120;

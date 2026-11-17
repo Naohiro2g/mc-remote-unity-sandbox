@@ -153,6 +153,9 @@
   - `DemoEditor.Validate` -> `LOCAL_SANDBOX_VALIDATION_PASS: negative/relative coordinates, plots, warp, highlight, dug terrain, six hit faces, ground, replace/remove, scene reset`
   - `DemoPlaySmoke.Run`（クリーンコピー上で `-quit` なし実行後削除）-> `LOCAL_SANDBOX_PLAY_SMOKE_PASS: Start initialization, feet y=63, walking, ground collision, eye offset`
   - `DemoEditor.BuildWebGL` -> `LOCAL_SANDBOX_WEBGL_BUILD_PASS`（`31933672 bytes`）
+- `2321.2.0` 公開候補準備（ナレッジ `f72d5bf6e304e6a36f60b7ec9b6b300ce8b46926`、`2026-11-17-01`/`02` 反映）：
+  - `VERSION` を `2321.2.0` へ更新、`THIRD-PARTY-NOTICES.txt`（MIT・SIL OFL 1.1・Newtonsoft.Json・.NET 9・Unity WebGL Player Runtime 帰属表示）を新設し `Dockerfile`（`/app/` および `/app/wwwroot/THIRD-PARTY-NOTICES.txt`）へ同梱（OCI `licenses` は `MIT` 維持）。
+  - `dotnet test server/Code2Create.UnitySandbox.sln --nologo` -> **24/24** 合格、`DemoEditor.Validate` -> `LOCAL_SANDBOX_VALIDATION_PASS`、`DemoEditor.BuildWebGL` -> `LOCAL_SANDBOX_WEBGL_BUILD_PASS`（`31933678 bytes`、`ProjectSettings.bundleVersion: 2321.2.0` 反映）。
 
 - 日付・端末・OS・Unity／ブラウザの版：
 - 場面・ブロック数・変えた設定：
