@@ -74,8 +74,9 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 }
 
                 var m = Own(new Material(shader) { name = "Demo " + (DemoMaterial)i, color = colors[i], mainTexture = tex });
-                m.SetFloat("_Metallic", i < 2 ? .55f : .05f);
-                m.SetFloat("_Glossiness", i < 2 ? .45f : .22f);
+                bool isMatteGround = i == (int)DemoMaterial.Grass || i == (int)DemoMaterial.Dirt;
+                m.SetFloat("_Metallic", i < 2 ? .55f : (isMatteGround ? 0f : .05f));
+                m.SetFloat("_Glossiness", i < 2 ? .45f : (isMatteGround ? .03f : .22f));
 
                 if (i == (int)DemoMaterial.Lantern)
                 {
@@ -93,7 +94,14 @@ namespace Code2Create.UnitySandbox.LocalDemo
             }
 
             GrassTop = Own(new Material(shader) { name = "Demo grass top", color = new Color(.29f, .53f, .18f) });
+            GrassTop.SetFloat("_Metallic", 0f);
+            GrassTop.SetFloat("_Glossiness", 0f);
+            GrassTop.SetFloat("_SpecularHighlights", 0f);
+            GrassTop.EnableKeyword("_SPECULARHIGHLIGHTS_OFF");
+
             SnowyGrassTop = Own(new Material(shader) { name = "Demo snowy grass top", color = new Color(.92f, .96f, 1f) });
+            SnowyGrassTop.SetFloat("_Metallic", 0f);
+            SnowyGrassTop.SetFloat("_Glossiness", 0.08f);
 
             UnstableTnt = Own(new Material(shader) { name = "Demo unstable tnt", color = new Color(1f, .88f, .82f), mainTexture = tntTex });
             UnstableTnt.EnableKeyword("_EMISSION");

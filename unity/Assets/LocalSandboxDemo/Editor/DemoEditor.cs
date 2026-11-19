@@ -205,7 +205,20 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
         private static void ValidateTargetHud(LocalSandboxDemo demo, PhysicsScene physics)
         {
-            // Distance limit (16m) for McRemote-aligned target raycast
+            // Grass top must be completely matte to avoid plastic specular glare
+            Material grassTopMat = null;
+            foreach (var r in demo.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r.gameObject.name == "Grass top")
+                {
+                    grassTopMat = r.sharedMaterial;
+                    break;
+                }
+            }
+            Require(grassTopMat != null, "grass top material found");
+            Require(grassTopMat.GetFloat("_Metallic") == 0f && grassTopMat.GetFloat("_Glossiness") <= 0.05f, "grass top is matte");
+
+            // Distance limit (16m) for McRemote-aligned target raycast & hairline outline
             var targetCell = new Vector3Int(20, 64, 5);
             demo.Blocks.ApplyBox(targetCell, targetCell, "minecraft:gold_block", trackPlacement: false, countAsModified: false);
             Physics.SyncTransforms();
@@ -216,6 +229,18 @@ namespace Code2Create.UnitySandbox.LocalDemo
             Require(
                 !physics.Raycast(new Vector3(20.5f, 64.5f, -12.0f), Vector3.forward, out _, LocalSandboxDemo.MaxTargetDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore),
                 "target miss beyond 16m");
+
+            demo.View.transform.position = new Vector3(20.5f, 64.5f, -9.0f);
+            demo.View.transform.rotation = Quaternion.LookRotation(Vector3.forward, Vector3.up);
+            demo.RefreshTargetOutline();
+            Require(demo.IsTargetOutlineActive && demo.CurrentTargetCell == targetCell, "hairline outline active within 16m");
+
+            demo.View.transform.position = new Vector3(20.5f, 64.5f, -12.0f);
+            demo.RefreshTargetOutline();
+            Require(!demo.IsTargetOutlineActive && demo.CurrentTargetCell == null, "hairline outline hidden beyond 16m");
+
+            var walker = demo.GetComponentInChildren<LocalSandboxWalker>();
+            if (walker != null) walker.ResetPose();
 
             // McRemote-aligned target/origin missing coordinate formatting
             LocalSandboxDemo.FormatHudCoordinates(null, demo.DisplayOrigin, relativeOriginAvailable: true, out string missAbs, out string missRel);

@@ -86,10 +86,17 @@ namespace Code2Create.UnitySandbox.LocalDemo
         private float lastSentMcYaw;
         private float lastSentMcPitch;
         private float nextPoseSendAt;
+        private GameObject targetOutlineRoot;
+        private readonly LineRenderer[] targetOutlineLines = new LineRenderer[6];
+        private readonly Vector3[] outlineLoopPoints = new Vector3[4];
+        private readonly Vector3[] outlineEdgePoints = new Vector3[2];
+        private Vector3Int? currentTargetCell;
 
         internal DemoBlocks Blocks => blocks;
         internal Camera View => walker.View;
         internal Vector3Int DisplayOrigin => displayOrigin;
+        internal bool IsTargetOutlineActive => targetOutlineRoot != null && targetOutlineRoot.activeSelf;
+        internal Vector3Int? CurrentTargetCell => currentTargetCell;
 
         private void Awake()
         {
@@ -148,6 +155,8 @@ namespace Code2Create.UnitySandbox.LocalDemo
             player.layer = 2; // Ignore Raycast: 自分の身体を照準に含めない。
             walker = player.AddComponent<LocalSandboxWalker>();
             walker.Initialize(displayOrigin);
+            CreateTargetOutline();
+            RefreshTargetOutline();
 
             string ver = string.IsNullOrEmpty(Application.version) ? "2321.2.0" : Application.version;
             AddChatLine(DemoText.WelcomeMessage(currentLang, ver));
@@ -576,9 +585,106 @@ namespace Code2Create.UnitySandbox.LocalDemo
 #endif
         }
 
+        private void CreateTargetOutline()
+        {
+            targetOutlineRoot = new GameObject("Target block outline");
+            targetOutlineRoot.transform.SetParent(generated.transform, false);
+            targetOutlineRoot.layer = 2; // Ignore Raycast
+            var outlineColor = new Color(0.02f, 0.03f, 0.05f, 0.80f);
+
+            for (int i = 0; i < targetOutlineLines.Length; i++)
+            {
+                var lineGo = new GameObject("Edge_" + i);
+                lineGo.transform.SetParent(targetOutlineRoot.transform, false);
+                lineGo.layer = 2;
+                var lr = lineGo.AddComponent<LineRenderer>();
+                lr.sharedMaterial = palette.Guide;
+                lr.useWorldSpace = true;
+                lr.loop = i < 2;
+                lr.positionCount = i < 2 ? 4 : 2;
+                lr.startColor = lr.endColor = outlineColor;
+                lr.startWidth = lr.endWidth = 0.01f;
+                lr.numCornerVertices = 2;
+                lr.numCapVertices = 2;
+                lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                lr.receiveShadows = false;
+                targetOutlineLines[i] = lr;
+            }
+
+            targetOutlineRoot.SetActive(false);
+        }
+
+        internal void RefreshTargetOutline()
+        {
+            if (walker == null || View == null || targetOutlineRoot == null) return;
+
+            var physicsScene = gameObject.scene.GetPhysicsScene();
+            var ray = View.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+            if (!physicsScene.Raycast(ray.origin, ray.direction, out var hit, MaxTargetDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            {
+                currentTargetCell = null;
+                if (targetOutlineRoot.activeSelf) targetOutlineRoot.SetActive(false);
+                return;
+            }
+
+            Vector3Int cell = DemoCoordinates.HitCell(hit);
+            currentTargetCell = cell;
+
+            float dist = Vector3.Distance(View.transform.position, DemoCoordinates.Center(cell));
+            float width = Mathf.Clamp(dist * 0.0024f, 0.003f, 0.042f);
+            float pad = Mathf.Max(0.004f, width * 0.55f);
+
+            bool isGrassBlock = hit.collider != null &&
+                string.Equals(hit.collider.gameObject.name, "minecraft:grass_block", StringComparison.Ordinal);
+            bool restsOnGrass = !isGrassBlock &&
+                physicsScene.Raycast(DemoCoordinates.Center(cell), Vector3.down, out var belowHit, 0.6f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) &&
+                belowHit.collider != null &&
+                string.Equals(belowHit.collider.gameObject.name, "minecraft:grass_block", StringComparison.Ordinal);
+
+            float minX = cell.x - pad;
+            float maxX = cell.x + 1f + pad;
+            float minZ = cell.z - pad;
+            float maxZ = cell.z + 1f + pad;
+            float minY = restsOnGrass ? (cell.y + 0.01f + pad * 0.5f) : (cell.y - pad);
+            float maxY = isGrassBlock ? (cell.y + 1.01f + pad) : (cell.y + 1f + pad);
+
+            for (int i = 0; i < targetOutlineLines.Length; i++)
+            {
+                targetOutlineLines[i].startWidth = targetOutlineLines[i].endWidth = width;
+            }
+
+            outlineLoopPoints[0] = new Vector3(minX, maxY, minZ);
+            outlineLoopPoints[1] = new Vector3(maxX, maxY, minZ);
+            outlineLoopPoints[2] = new Vector3(maxX, maxY, maxZ);
+            outlineLoopPoints[3] = new Vector3(minX, maxY, maxZ);
+            targetOutlineLines[0].SetPositions(outlineLoopPoints);
+
+            outlineLoopPoints[0] = new Vector3(minX, minY, minZ);
+            outlineLoopPoints[1] = new Vector3(maxX, minY, minZ);
+            outlineLoopPoints[2] = new Vector3(maxX, minY, maxZ);
+            outlineLoopPoints[3] = new Vector3(minX, minY, maxZ);
+            targetOutlineLines[1].SetPositions(outlineLoopPoints);
+
+            SetOutlineVerticalEdge(2, minX, minY, maxY, minZ);
+            SetOutlineVerticalEdge(3, maxX, minY, maxY, minZ);
+            SetOutlineVerticalEdge(4, maxX, minY, maxY, maxZ);
+            SetOutlineVerticalEdge(5, minX, minY, maxY, maxZ);
+
+            if (!targetOutlineRoot.activeSelf) targetOutlineRoot.SetActive(true);
+        }
+
+        private void SetOutlineVerticalEdge(int lineIndex, float x, float minY, float maxY, float z)
+        {
+            outlineEdgePoints[0] = new Vector3(x, minY, z);
+            outlineEdgePoints[1] = new Vector3(x, maxY, z);
+            targetOutlineLines[lineIndex].SetPositions(outlineEdgePoints);
+        }
+
         private void LateUpdate()
         {
-            if (walker == null || syncClient == null || !syncClient.IsConnected) return;
+            if (walker == null) return;
+            RefreshTargetOutline();
+            if (syncClient == null || !syncClient.IsConnected) return;
             if (Time.unscaledTime < nextPoseSendAt) return;
 
             walker.GetMinecraftPose(out Vector3 pos, out float mcYaw, out float mcPitch);
@@ -754,11 +860,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             {
                 absHex = ColorUtility.ToHtmlStringRGB(Color.HSVToRGB(40f / 360f, 0.90f, 0.95f));
                 relHex = ColorUtility.ToHtmlStringRGB(Color.HSVToRGB(320f / 360f, 0.48f, 1.00f));
-                var ray = View.ViewportPointToRay(new Vector3(.5f, .5f, 0f));
-                if (Physics.Raycast(ray, out var hit, MaxTargetDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
-                {
-                    absCell = DemoCoordinates.HitCell(hit);
-                }
+                absCell = currentTargetCell;
             }
 
             FormatHudCoordinates(absCell, displayOrigin, relativeOriginAvailable, out string absText, out string relText);
