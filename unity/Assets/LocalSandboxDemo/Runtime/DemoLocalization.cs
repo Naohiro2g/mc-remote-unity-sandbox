@@ -211,5 +211,10 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
         internal static string PairAssistButton(DemoLanguage lang) => lang == DemoLanguage.En ? "Pair Cmd" : "入力補助";
         internal static string SendButton(DemoLanguage lang) => lang == DemoLanguage.En ? "Send" : "送信";
+
+        internal static string ChatPlaceholder(DemoLanguage lang)
+            => lang == DemoLanguage.En
+                ? "Message or /mcremote pair NNN-NNN"
+                : "メッセージ または /mcremote pair NNN-NNN";
     }
 }

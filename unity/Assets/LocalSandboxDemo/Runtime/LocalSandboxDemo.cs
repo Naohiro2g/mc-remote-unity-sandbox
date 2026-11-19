@@ -7,7 +7,9 @@ namespace Code2Create.UnitySandbox.LocalDemo
     [DisallowMultipleComponent]
     public sealed class LocalSandboxDemo : MonoBehaviour
     {
+#if !(UNITY_WEBGL && !UNITY_EDITOR)
         private const string ChatControlName = "SandboxChatInput";
+#endif
         private const int MaxChatLogLines = 80;
 
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -15,6 +17,14 @@ namespace Code2Create.UnitySandbox.LocalDemo
         [System.Runtime.InteropServices.DllImport("__Internal")] private static extern void SandboxWsToggleFullscreen();
         [System.Runtime.InteropServices.DllImport("__Internal")] private static extern string SandboxWsGetInitialLanguage();
         [System.Runtime.InteropServices.DllImport("__Internal")] private static extern void SandboxWsSaveLanguage(string lang);
+        [System.Runtime.InteropServices.DllImport("__Internal")] private static extern void SandboxWsSyncChatInputLayout(
+            float nx, float ny, float nw, float nh, string placeholder, int visible);
+        [System.Runtime.InteropServices.DllImport("__Internal")] private static extern int SandboxWsIsChatFocused();
+        [System.Runtime.InteropServices.DllImport("__Internal")] private static extern void SandboxWsFocusChat(int setSlashIfEmpty, int moveCaretToEnd);
+        [System.Runtime.InteropServices.DllImport("__Internal")] private static extern void SandboxWsBlurChat();
+        [System.Runtime.InteropServices.DllImport("__Internal")] private static extern string SandboxWsGetChatText();
+        [System.Runtime.InteropServices.DllImport("__Internal")] private static extern void SandboxWsSetChatText(string text, int moveCaretToEnd);
+        [System.Runtime.InteropServices.DllImport("__Internal")] private static extern string SandboxWsPopSubmittedChat();
 #endif
 
         [SerializeField] private Vector3Int displayOrigin = new Vector3Int(100, 0, 100);
@@ -29,6 +39,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
         private const float DoubleTapThreshold = 0.35f;
         private const float CoordShadowOffsetPx = 0.8f;
+        internal const float MaxTargetDistance = 16f;
 
         private Font loadedFont;
         private GUIStyle textStyle;
@@ -50,12 +61,16 @@ namespace Code2Create.UnitySandbox.LocalDemo
         private bool hudExpanded = true;
         private bool hudTargetMode;
         private float lastQDownTime = -10f;
+#if UNITY_WEBGL && !UNITY_EDITOR
+        private bool lastWebGlCaptureKeyboard = true;
+#else
         private string chatInput = string.Empty;
         private bool focusChatRequested;
         private bool unfocusChatRequested;
         private bool placeCaretAtEndRequested;
         private char suppressActivationChar;
         private float suppressActivationUntil;
+#endif
         private readonly List<string> chatLog = new List<string>();
         private readonly List<float> chatLineHeights = new List<float>();
         private readonly GUIContent reusableChatContent = new GUIContent();
@@ -365,6 +380,19 @@ namespace Code2Create.UnitySandbox.LocalDemo
             string cleaned = (pastedText ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty).Trim();
             if (string.IsNullOrEmpty(cleaned)) return;
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+            string current = SandboxWsGetChatText() ?? string.Empty;
+            string next = string.Equals(current, "/mcremote pair ", StringComparison.OrdinalIgnoreCase) &&
+                          !cleaned.StartsWith("/", StringComparison.Ordinal)
+                ? current + cleaned
+                : cleaned;
+            if (next.Length > 160) next = next.Substring(0, 160);
+            SandboxWsSetChatText(next, 1);
+            SandboxWsFocusChat(0, 1);
+            if (walker != null) walker.IsTypingChat = true;
+            WebGLInput.captureAllKeyboardInput = false;
+            lastWebGlCaptureKeyboard = false;
+#else
             if (string.Equals(chatInput, "/mcremote pair ", StringComparison.OrdinalIgnoreCase) &&
                 !cleaned.StartsWith("/", StringComparison.Ordinal))
             {
@@ -379,6 +407,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             if (walker != null) walker.IsTypingChat = true;
             focusChatRequested = true;
             placeCaretAtEndRequested = true;
+#endif
         }
 
         private void OnPairResultReceived(SyncPairResultPayload res)
@@ -443,6 +472,26 @@ namespace Code2Create.UnitySandbox.LocalDemo
             blocks?.UpdateHighlight(Time.unscaledDeltaTime);
             syncClient?.Tick(Time.unscaledTime);
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+            string submitted;
+            while (!string.IsNullOrEmpty(submitted = SandboxWsPopSubmittedChat()))
+            {
+                SendOrHandleChatText(submitted);
+            }
+
+            bool webChatFocused = SandboxWsIsChatFocused() != 0;
+            bool wantCaptureAll = !webChatFocused;
+            if (wantCaptureAll != lastWebGlCaptureKeyboard)
+            {
+                WebGLInput.captureAllKeyboardInput = wantCaptureAll;
+                lastWebGlCaptureKeyboard = wantCaptureAll;
+            }
+            if (walker != null)
+            {
+                walker.IsTypingChat = webChatFocused;
+            }
+#endif
+
 #if ENABLE_LEGACY_INPUT_MANAGER
             if (walker != null)
             {
@@ -450,11 +499,24 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 {
                     Vector2 guiPos = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
                     bool overUi = IsPointOverUi(guiPos);
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    if ((webChatFocused || walker.IsTypingChat) && !chatPanelRect.Contains(guiPos))
+                    {
+                        SandboxWsBlurChat();
+                        walker.IsTypingChat = false;
+                        if (lastWebGlCaptureKeyboard != true)
+                        {
+                            WebGLInput.captureAllKeyboardInput = true;
+                            lastWebGlCaptureKeyboard = true;
+                        }
+                    }
+#else
                     if (walker.IsTypingChat && !chatPanelRect.Contains(guiPos))
                     {
                         walker.IsTypingChat = false;
                         unfocusChatRequested = true;
                     }
+#endif
                     if (!overUi)
                     {
                         walker.LockCursor();
@@ -463,6 +525,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
                 if (!walker.IsTypingChat)
                 {
+#if !(UNITY_WEBGL && !UNITY_EDITOR)
                     bool slashDown = Input.GetKeyDown(KeyCode.Slash) ||
                                      Input.GetKeyDown(KeyCode.KeypadDivide) ||
                                      Input.inputString.IndexOf('/') >= 0;
@@ -488,6 +551,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
                     }
                     else
                     {
+#endif
                         if (Input.GetKeyDown(KeyCode.Q))
                         {
                             if (Time.unscaledTime - lastQDownTime <= DoubleTapThreshold)
@@ -504,7 +568,9 @@ namespace Code2Create.UnitySandbox.LocalDemo
                         if (Input.GetKeyDown(KeyCode.Alpha1) && !hasOnlineSnapshot) PopulateMode(0);
                         if (Input.GetKeyDown(KeyCode.Alpha2) && !hasOnlineSnapshot) PopulateMode(1);
                         if (Input.GetKeyDown(KeyCode.Alpha3) && !hasOnlineSnapshot) PopulateMode(2);
+#if !(UNITY_WEBGL && !UNITY_EDITOR)
                     }
+#endif
                 }
             }
 #endif
@@ -560,15 +626,9 @@ namespace Code2Create.UnitySandbox.LocalDemo
             chatScrollOffsetPx = 0f;
         }
 
-        private void SubmitChatOrPair()
+        private void SendOrHandleChatText(string rawText)
         {
-            string text = (chatInput ?? string.Empty).Trim();
-            chatInput = string.Empty;
-            walker.IsTypingChat = true;
-            focusChatRequested = true;
-            placeCaretAtEndRequested = true;
-            suppressActivationChar = '\0';
-
+            string text = (rawText ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(text)) return;
 
             if (syncClient != null && syncClient.IsConnected)
@@ -584,6 +644,19 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 }
             }
         }
+
+#if !(UNITY_WEBGL && !UNITY_EDITOR)
+        private void SubmitChatOrPair()
+        {
+            string raw = chatInput;
+            chatInput = string.Empty;
+            walker.IsTypingChat = true;
+            focusChatRequested = true;
+            placeCaretAtEndRequested = true;
+            suppressActivationChar = '\0';
+            SendOrHandleChatText(raw);
+        }
+#endif
 
         private void EnsureStyles()
         {
@@ -666,17 +739,14 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
         private void BuildMcRemoteHudLines(out string richLine, out string plainLine)
         {
-            string absText;
-            string relText;
             string absHex;
             string relHex;
+            bool relativeOriginAvailable = !hasOnlineSnapshot || !string.IsNullOrEmpty(activeStreamId);
+            Vector3Int? absCell = null;
 
             if (!hudTargetMode)
             {
-                var legs = DemoCoordinates.Cell(walker.transform.position);
-                var rel = DemoCoordinates.Relative(legs, displayOrigin);
-                absText = $"{legs.x} {legs.y} {legs.z}";
-                relText = $"{rel.x} {rel.y} {rel.z}";
+                absCell = DemoCoordinates.Cell(walker.transform.position);
                 absHex = ColorUtility.ToHtmlStringRGB(Color.HSVToRGB(40f / 360f, 0.40f, 0.90f));
                 relHex = ColorUtility.ToHtmlStringRGB(Color.HSVToRGB(320f / 360f, 0.40f, 0.90f));
             }
@@ -685,19 +755,13 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 absHex = ColorUtility.ToHtmlStringRGB(Color.HSVToRGB(40f / 360f, 0.90f, 0.95f));
                 relHex = ColorUtility.ToHtmlStringRGB(Color.HSVToRGB(320f / 360f, 0.48f, 1.00f));
                 var ray = View.ViewportPointToRay(new Vector3(.5f, .5f, 0f));
-                if (Physics.Raycast(ray, out var hit, 120f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+                if (Physics.Raycast(ray, out var hit, MaxTargetDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
                 {
-                    var cell = DemoCoordinates.HitCell(hit);
-                    var rel = DemoCoordinates.Relative(cell, displayOrigin);
-                    absText = $"{cell.x} {cell.y} {cell.z}";
-                    relText = $"{rel.x} {rel.y} {rel.z}";
-                }
-                else
-                {
-                    absText = "[-]";
-                    relText = "[-]";
+                    absCell = DemoCoordinates.HitCell(hit);
                 }
             }
+
+            FormatHudCoordinates(absCell, displayOrigin, relativeOriginAvailable, out string absText, out string relText);
 
             Vector3 fwd = walker.transform.forward;
             float compassDeg = (Mathf.Atan2(fwd.x, -fwd.z) * Mathf.Rad2Deg + 360f) % 360f;
@@ -715,12 +779,38 @@ namespace Code2Create.UnitySandbox.LocalDemo
                        $"<color=#{markHex}>#</color><color=#{dirHex}>{dirLabel}</color><color=#{markHex}>#</color>";
         }
 
+        internal static void FormatHudCoordinates(
+            Vector3Int? absoluteCell,
+            Vector3Int origin,
+            bool relativeOriginAvailable,
+            out string absText,
+            out string relText)
+        {
+            absText = absoluteCell.HasValue
+                ? $"{absoluteCell.Value.x} {absoluteCell.Value.y} {absoluteCell.Value.z}"
+                : "[-]";
+            if (!relativeOriginAvailable)
+            {
+                relText = "[ - - - ]";
+            }
+            else if (!absoluteCell.HasValue)
+            {
+                relText = "[-]";
+            }
+            else
+            {
+                var rel = DemoCoordinates.Relative(absoluteCell.Value, origin);
+                relText = $"{rel.x} {rel.y} {rel.z}";
+            }
+        }
+
         private void OnGUI()
         {
             if (walker == null) return;
             EnsureStyles();
             uiHitRects.Clear();
 
+#if !(UNITY_WEBGL && !UNITY_EDITOR)
             if (unfocusChatRequested)
             {
                 GUI.FocusControl(null);
@@ -767,6 +857,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
                     }
                 }
             }
+#endif
 
             bool narrow = Screen.width <= 840;
             float margin = narrow ? 6f : 8f;
@@ -794,6 +885,31 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
             if (Event.current.type == EventType.MouseDown && Event.current.button == 0)
             {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                if (!chatRect.Contains(Event.current.mousePosition))
+                {
+                    if (SandboxWsIsChatFocused() != 0 || walker.IsTypingChat)
+                    {
+                        SandboxWsBlurChat();
+                        walker.IsTypingChat = false;
+                        if (lastWebGlCaptureKeyboard != true)
+                        {
+                            WebGLInput.captureAllKeyboardInput = true;
+                            lastWebGlCaptureKeyboard = true;
+                        }
+                    }
+                }
+                else if (Event.current.mousePosition.y < chatRect.yMax - 5f - (narrow ? 22f : 24f))
+                {
+                    walker.IsTypingChat = true;
+                    if (lastWebGlCaptureKeyboard != false)
+                    {
+                        WebGLInput.captureAllKeyboardInput = false;
+                        lastWebGlCaptureKeyboard = false;
+                    }
+                    SandboxWsFocusChat(0, 1);
+                }
+#else
                 if (!chatRect.Contains(Event.current.mousePosition))
                 {
                     if (walker.IsTypingChat)
@@ -814,6 +930,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
                         if (!alreadyFocused) placeCaretAtEndRequested = true;
                     }
                 }
+#endif
             }
 
             if (Event.current.type == EventType.ScrollWheel && chatRect.Contains(Event.current.mousePosition))
@@ -971,6 +1088,61 @@ namespace Code2Create.UnitySandbox.LocalDemo
             }
             GUI.EndGroup();
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+            GUILayout.BeginArea(inputRowRect);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(DemoText.PairAssistButton(currentLang), buttonStyle, GUILayout.Width(narrow ? 62f : 76f)))
+            {
+                string cur = SandboxWsGetChatText() ?? string.Empty;
+                if (!cur.StartsWith("/mcremote pair", StringComparison.OrdinalIgnoreCase))
+                {
+                    SandboxWsSetChatText("/mcremote pair ", 1);
+                }
+                walker.IsTypingChat = true;
+                if (lastWebGlCaptureKeyboard != false)
+                {
+                    WebGLInput.captureAllKeyboardInput = false;
+                    lastWebGlCaptureKeyboard = false;
+                }
+                SandboxWsFocusChat(0, 1);
+            }
+
+            Rect localFieldRect = GUILayoutUtility.GetRect(
+                GUIContent.none,
+                inputStyle,
+                GUILayout.Height(inputRowH),
+                GUILayout.ExpandWidth(true));
+            if (Event.current.type == EventType.Repaint && Screen.width > 0 && Screen.height > 0)
+            {
+                float sx = inputRowRect.x + localFieldRect.x;
+                float sy = inputRowRect.y + 1f;
+                float sw = Mathf.Max(40f, localFieldRect.width);
+                float sh = Mathf.Max(16f, inputRowRect.height - 2f);
+                SandboxWsSyncChatInputLayout(
+                    sx / Screen.width,
+                    sy / Screen.height,
+                    sw / Screen.width,
+                    sh / Screen.height,
+                    DemoText.ChatPlaceholder(currentLang),
+                    1);
+            }
+
+            if (GUILayout.Button(DemoText.SendButton(currentLang), buttonStyle, GUILayout.Width(narrow ? 46f : 56f)))
+            {
+                string raw = SandboxWsGetChatText();
+                SandboxWsSetChatText(string.Empty, 1);
+                SendOrHandleChatText(raw);
+                walker.IsTypingChat = true;
+                if (lastWebGlCaptureKeyboard != false)
+                {
+                    WebGLInput.captureAllKeyboardInput = false;
+                    lastWebGlCaptureKeyboard = false;
+                }
+                SandboxWsFocusChat(0, 1);
+            }
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
+#else
             GUILayout.BeginArea(inputRowRect);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(DemoText.PairAssistButton(currentLang), buttonStyle, GUILayout.Width(narrow ? 62f : 76f)))
@@ -1018,6 +1190,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             }
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
+#endif
 
             // 画面中央レティクル（黒・太め・大きめ）
             float cx = Mathf.Round(Screen.width * 0.5f);
@@ -1031,6 +1204,11 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
         private void OnDestroy()
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            WebGLInput.captureAllKeyboardInput = true;
+            lastWebGlCaptureKeyboard = true;
+            SandboxWsSyncChatInputLayout(0f, 0f, 0f, 0f, string.Empty, 0);
+#endif
             syncClient?.Dispose();
             blocks?.Dispose();
             DemoPalette.Release(generated);

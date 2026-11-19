@@ -193,12 +193,43 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 demo.Blocks.HighlightEnabled = true;
                 demo.Populate(false);
 
-                Debug.Log("LOCAL_SANDBOX_VALIDATION_PASS: negative/relative coordinates, plots, warp, highlight, dug terrain, six hit faces, ground, replace/remove, scene reset");
+                ValidateTargetHud(demo, physics);
+
+                Debug.Log("LOCAL_SANDBOX_VALIDATION_PASS: negative/relative coordinates, plots, warp, highlight, dug terrain, six hit faces, ground, replace/remove, 16m HUD target, scene reset");
             }
             finally
             {
                 EditorSceneManager.ClosePreviewScene(scene);
             }
+        }
+
+        private static void ValidateTargetHud(LocalSandboxDemo demo, PhysicsScene physics)
+        {
+            // Distance limit (16m) for McRemote-aligned target raycast
+            var targetCell = new Vector3Int(20, 64, 5);
+            demo.Blocks.ApplyBox(targetCell, targetCell, "minecraft:gold_block", trackPlacement: false, countAsModified: false);
+            Physics.SyncTransforms();
+            Require(
+                physics.Raycast(new Vector3(20.5f, 64.5f, -9.0f), Vector3.forward, out var nearHit, LocalSandboxDemo.MaxTargetDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) &&
+                DemoCoordinates.HitCell(nearHit) == targetCell,
+                "target hit within 16m");
+            Require(
+                !physics.Raycast(new Vector3(20.5f, 64.5f, -12.0f), Vector3.forward, out _, LocalSandboxDemo.MaxTargetDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore),
+                "target miss beyond 16m");
+
+            // McRemote-aligned target/origin missing coordinate formatting
+            LocalSandboxDemo.FormatHudCoordinates(null, demo.DisplayOrigin, relativeOriginAvailable: true, out string missAbs, out string missRel);
+            Require(missAbs == "[-]" && missRel == "[-]", "target miss paired format");
+
+            LocalSandboxDemo.FormatHudCoordinates(new Vector3Int(110, 63, 120), demo.DisplayOrigin, relativeOriginAvailable: false, out string legsAbs, out string noOriginRel);
+            Require(legsAbs == "110 63 120" && noOriginRel == "[ - - - ]", "unpaired legs format");
+
+            LocalSandboxDemo.FormatHudCoordinates(null, demo.DisplayOrigin, relativeOriginAvailable: false, out string bothMissAbs, out string bothMissRel);
+            Require(bothMissAbs == "[-]" && bothMissRel == "[ - - - ]", "target miss without origin format");
+
+            demo.Populate(false);
+            Physics.SyncTransforms();
+            Require(demo.Blocks.Count == 120, "scene reset after HUD validation");
         }
 
         // -executeMethod ...DemoEditor.CapturePreview -demoPreview /absolute/path.png
