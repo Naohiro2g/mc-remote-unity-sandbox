@@ -10,12 +10,15 @@ WORKDIR /src
 COPY VERSION ./VERSION
 COPY server/ ./server/
 
-RUN dotnet restore server/src/Code2Create.UnitySandbox.Server/Code2Create.UnitySandbox.Server.csproj \
+RUN VERSION_PREFIX="$(printf '%s' "${SANDBOX_VERSION}" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')" \
+    && dotnet restore server/src/Code2Create.UnitySandbox.Server/Code2Create.UnitySandbox.Server.csproj \
     && dotnet publish server/src/Code2Create.UnitySandbox.Server/Code2Create.UnitySandbox.Server.csproj \
         -c Release \
         --no-restore \
         -o /app/publish \
-        "/p:Version=${SANDBOX_VERSION}"
+        "/p:VersionPrefix=${VERSION_PREFIX}" \
+        "/p:InformationalVersion=${SANDBOX_VERSION}" \
+        "/p:IncludeSourceRevisionInInformationalVersion=false"
 
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 ARG SANDBOX_VERSION
