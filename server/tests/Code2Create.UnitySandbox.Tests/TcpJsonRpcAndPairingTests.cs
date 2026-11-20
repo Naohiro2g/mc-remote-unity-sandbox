@@ -178,14 +178,14 @@ public class TcpJsonRpcAndPairingTests
         }
 
         // 2. Incompatible versions -> protocol_mismatch (-32000, data.server & data.client_requires) & closes
-        foreach (string badProtocol in new[] { "22.0.0", "24.0.0", "23.4.0", "not-semver" })
+        foreach (string badProtocol in new[] { "23.0.0", "23.2.1", "23.3.0", "22.0.0", "25.0.0", "24.1.0", "not-semver" })
         {
             using var rpc = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
             var resp = await rpc.CallAsync(1, "hello", new JObject { ["protocol"] = badProtocol }, cts.Token);
             Assert.Equal(-32000, resp["error"]!["code"]!.Value<int>());
             var data = Assert.IsType<JObject>(resp["error"]!["data"]);
             Assert.Equal("protocol_mismatch", data["reason"]!.Value<string>());
-            Assert.Equal("23.3.0", data["server"]!.Value<string>());
+            Assert.Equal("24.0.0", data["server"]!.Value<string>());
             Assert.Equal(badProtocol, data["client_requires"]!.Value<string>());
             await rpc.ExpectEofAsync(cts.Token);
         }
@@ -193,7 +193,7 @@ public class TcpJsonRpcAndPairingTests
         // 3. Token errors: missing auth -> auth_required; unknown -> token_not_found; bad format -> token_invalid
         using (var rpc = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
         {
-            var resp = await rpc.CallAsync(1, "hello", new JObject { ["protocol"] = "23.3.0" }, cts.Token);
+            var resp = await rpc.CallAsync(1, "hello", new JObject { ["protocol"] = "24.0.0" }, cts.Token);
             Assert.Equal(-32000, resp["error"]!["code"]!.Value<int>());
             Assert.Equal("auth_required", resp["error"]!["data"]!["reason"]!.Value<string>());
             await rpc.ExpectEofAsync(cts.Token);
@@ -203,7 +203,7 @@ public class TcpJsonRpcAndPairingTests
         {
             var resp = await rpc.CallAsync(1, "hello", new JObject
             {
-                ["protocol"] = "23.3.0",
+                ["protocol"] = "24.0.0",
                 ["auth"] = new JObject { ["token"] = "mcrs_fixture_only_not_a_real_credential" }
             }, cts.Token);
             Assert.Equal(-32000, resp["error"]!["code"]!.Value<int>());
@@ -215,7 +215,7 @@ public class TcpJsonRpcAndPairingTests
         {
             var resp = await rpc.CallAsync(1, "hello", new JObject
             {
-                ["protocol"] = "23.3.0",
+                ["protocol"] = "24.0.0",
                 ["auth"] = new JObject { ["token"] = "not a token" }
             }, cts.Token);
             Assert.Equal(-32000, resp["error"]!["code"]!.Value<int>());
@@ -223,7 +223,7 @@ public class TcpJsonRpcAndPairingTests
             await rpc.ExpectEofAsync(cts.Token);
         }
 
-        // 4. Compatible client minor versions (23.2.1, 23.3.0) + unknown_dimension rejection
+        // 4. Compatible client version (24.0.0) + unknown_dimension rejection
         var tokenStore = app.Services.GetRequiredService<ISandboxTokenStore>();
         var tokenRecord = tokenStore.IssueToken("session", "viewer-test", "stream-test", Guid.NewGuid().ToString("D"), clock.UtcNow);
 
@@ -231,7 +231,7 @@ public class TcpJsonRpcAndPairingTests
         {
             var resp = await rpc.CallAsync(1, "hello", new JObject
             {
-                ["protocol"] = "23.0.0",
+                ["protocol"] = "24.0.0",
                 ["auth"] = new JObject { ["token"] = tokenRecord.Token },
                 ["build"] = new JObject { ["dimension"] = "the_nether" }
             }, cts.Token);
@@ -241,7 +241,7 @@ public class TcpJsonRpcAndPairingTests
             await rpc.ExpectEofAsync(cts.Token);
         }
 
-        foreach (string compatProtocol in new[] { "23.2.1", "23.3.0" })
+        foreach (string compatProtocol in new[] { "24.0.0" })
         {
             using var rpc = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
             var resp = await rpc.CallAsync(1, "hello", new JObject
@@ -249,7 +249,7 @@ public class TcpJsonRpcAndPairingTests
                 ["protocol"] = compatProtocol,
                 ["auth"] = new JObject { ["token"] = tokenRecord.Token }
             }, cts.Token);
-            Assert.Equal("23.3.0", resp["result"]!["protocol"]!.Value<string>());
+            Assert.Equal("24.0.0", resp["result"]!["protocol"]!.Value<string>());
         }
 
         // 5. Session token expires after 7200s
@@ -258,7 +258,7 @@ public class TcpJsonRpcAndPairingTests
         {
             var resp = await rpc.CallAsync(1, "hello", new JObject
             {
-                ["protocol"] = "23.3.0",
+                ["protocol"] = "24.0.0",
                 ["auth"] = new JObject { ["token"] = tokenRecord.Token }
             }, cts.Token);
             Assert.Equal(-32000, resp["error"]!["code"]!.Value<int>());
@@ -289,8 +289,8 @@ public class TcpJsonRpcAndPairingTests
         using (var http = new HttpClient())
         {
             var health = JObject.Parse(await http.GetStringAsync(httpUrl + "/healthz", cts.Token));
-            Assert.Equal("2321.2.0", health["version"]!.Value<string>());
-            Assert.Equal("23.3.0", health["protocol"]!.Value<string>());
+            Assert.Equal("2400.0.0rc1", health["version"]!.Value<string>());
+            Assert.Equal("24.0.0", health["protocol"]!.Value<string>());
             Assert.Equal(tcpPort, health["tcpPort"]!.Value<int>());
         }
 
@@ -372,13 +372,13 @@ public class TcpJsonRpcAndPairingTests
         {
             var helloResp = await sessionRpc.CallAsync(1, "hello", new JObject
             {
-                ["protocol"] = "23.3.0",
+                ["protocol"] = "24.0.0",
                 ["client"] = new JObject { ["name"] = "scratch-editor", ["version"] = "2321.1.0", ["locale"] = "ja" },
                 ["auth"] = new JObject { ["token"] = token }
             }, cts.Token);
 
             var hello = Assert.IsType<JObject>(helloResp["result"]);
-            Assert.Equal("23.3.0", hello["protocol"]!.Value<string>());
+            Assert.Equal("24.0.0", hello["protocol"]!.Value<string>());
             Assert.Equal("1.21.11", hello["mc_version"]!.Value<string>());
             Assert.Equal(new[] { "1.21.11" }, hello["supported_mc_versions"]!.ToObject<string[]>());
             Assert.Equal("mc-remote-unity-sandbox", hello["server"]?["name"]?.Value<string>());
@@ -559,7 +559,7 @@ public class TcpJsonRpcAndPairingTests
         {
             var reHello = await reconnectRpc.CallAsync(1, "hello", new JObject
             {
-                ["protocol"] = "23.3.0",
+                ["protocol"] = "24.0.0",
                 ["auth"] = new JObject { ["token"] = token }
             }, cts.Token);
             Assert.Equal(playerUuid, reHello["result"]!["player"]!.Value<string>());
@@ -656,7 +656,7 @@ public class TcpJsonRpcAndPairingTests
             using var session1 = await TcpRpcClient.ConnectAsync(tcpPort1, cts.Token);
             var hello1 = await session1.CallAsync(1, "hello", new JObject
             {
-                ["protocol"] = "23.3.0",
+                ["protocol"] = "24.0.0",
                 ["auth"] = new JObject { ["token"] = tokenBeforeRestart }
             }, cts.Token);
             Assert.Null(hello1["error"]);
@@ -687,7 +687,7 @@ public class TcpJsonRpcAndPairingTests
         {
             var rejectedHello = await staleTokenRpc.CallAsync(1, "hello", new JObject
             {
-                ["protocol"] = "23.3.0",
+                ["protocol"] = "24.0.0",
                 ["auth"] = new JObject { ["token"] = tokenBeforeRestart }
             }, cts.Token);
             Assert.Equal(-32000, rejectedHello["error"]!["code"]!.Value<int>());
@@ -722,7 +722,7 @@ public class TcpJsonRpcAndPairingTests
         using var session2 = await TcpRpcClient.ConnectAsync(tcpPort2, cts.Token);
         var hello2 = await session2.CallAsync(1, "hello", new JObject
         {
-            ["protocol"] = "23.3.0",
+            ["protocol"] = "24.0.0",
             ["auth"] = new JObject { ["token"] = tokenAfterRestart }
         }, cts.Token);
         Assert.Null(hello2["error"]);
@@ -765,7 +765,7 @@ public class TcpJsonRpcAndPairingTests
         using var rpc = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
         var helloResp = await rpc.CallAsync(1, "hello", new JObject
         {
-            ["protocol"] = "23.3.0",
+            ["protocol"] = "24.0.0",
             ["auth"] = new JObject { ["token"] = token },
             ["build"] = new JObject { ["origin"] = new JArray(100, 0, 100) }
         }, cts.Token);
@@ -950,7 +950,7 @@ public class TcpJsonRpcAndPairingTests
         using var rpc = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
         var helloResp = await rpc.CallAsync(1, "hello", new JObject
         {
-            ["protocol"] = "23.3.0",
+            ["protocol"] = "24.0.0",
             ["auth"] = new JObject { ["token"] = token },
             ["build"] = new JObject { ["origin"] = new JArray(200, 0, 200) }
         }, cts.Token);
@@ -1024,7 +1024,7 @@ public class TcpJsonRpcAndPairingTests
         using var rpc2 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
         await rpc2.CallAsync(1, "hello", new JObject
         {
-            ["protocol"] = "23.3.0",
+            ["protocol"] = "24.0.0",
             ["auth"] = new JObject { ["token"] = token }
         }, cts.Token);
         var freshPoll = await rpc2.CallAsync(2, "events.poll", new JArray(0), cts.Token);
