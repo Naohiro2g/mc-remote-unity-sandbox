@@ -17,7 +17,7 @@ namespace Code2Create.UnitySandbox.World
         public const string McVersion = "1.21.11";
         public const string DefaultDimension = "minecraft:overworld";
         public const string DefaultServerName = "mc-remote-unity-sandbox";
-        public const string DefaultServerVersion = "0.1.0";
+        public const string DefaultServerVersion = "2321.2.0";
         public const int DefaultTcpPort = 25585;
         public const int DefaultBuildRange = 1000;
         public const int DefaultPairCodeTtlSeconds = 120;
@@ -29,10 +29,10 @@ namespace Code2Create.UnitySandbox.World
         public const int DefaultEventPollLimit = 64;
         public const int MaxEventPollLimit = 256;
 
-        public const double DefaultSpawnX = 100.0;
+        public const double DefaultSpawnX = 100.5;
         public const double DefaultSpawnY = 63.04;
-        public const double DefaultSpawnZ = 86.0;
-        public const double DefaultSpawnYaw = 0.0;
+        public const double DefaultSpawnZ = 114.5;
+        public const double DefaultSpawnYaw = -180.0;
         public const double DefaultSpawnPitch = 8.0;
 
         public const int MinX = -200;

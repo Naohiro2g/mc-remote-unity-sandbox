@@ -11,11 +11,28 @@ namespace Code2Create.UnitySandbox.LocalDemo
         private readonly List<BoxEntry> boxes = new List<BoxEntry>();
         private readonly HashSet<Vector3Int> revealedEggCenters = new HashSet<Vector3Int>();
 
+        private const float HighlightDurationSeconds = 0.5f;
+
         private GameObject highlightCube;
         private float highlightRemaining;
+        private bool highlightEnabled = true;
 
         internal int Count { get; private set; }
         internal Vector3Int? LastPlacedCell { get; private set; }
+        internal bool IsHighlightActive => highlightCube != null && highlightCube.activeSelf;
+        internal bool HighlightEnabled
+        {
+            get => highlightEnabled;
+            set
+            {
+                highlightEnabled = value;
+                if (!highlightEnabled)
+                {
+                    highlightRemaining = 0f;
+                    if (highlightCube != null) highlightCube.SetActive(false);
+                }
+            }
+        }
 
         internal DemoBlocks(Transform parent, DemoPalette palette)
         {
@@ -84,7 +101,10 @@ namespace Code2Create.UnitySandbox.LocalDemo
                         (min.x + max.x) / 2,
                         max.y,
                         (min.z + max.z) / 2);
-                    ShowHighlight(min, max);
+                    if (highlightEnabled)
+                    {
+                        ShowHighlight(min, max);
+                    }
                 }
             }
             else if (trackPlacement)
@@ -141,16 +161,13 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 highlightCube.GetComponent<Renderer>().sharedMaterial = palette.Highlight;
             }
 
-            Vector3 size = new Vector3(max.x - min.x + 1.06f, max.y - min.y + 1.06f, max.z - min.z + 1.06f);
-            Vector3 center = new Vector3(
-                (min.x + max.x + 1) * 0.5f,
-                (min.y + max.y + 1) * 0.5f,
-                (min.z + max.z + 1) * 0.5f);
+            DemoCoordinates.BoxCenterAndSize(min, max, out Vector3 center, out Vector3 rawSize);
+            Vector3 size = rawSize + new Vector3(0.06f, 0.06f, 0.06f);
 
             highlightCube.transform.position = center;
             highlightCube.transform.localScale = size;
             highlightCube.SetActive(true);
-            highlightRemaining = 2.0f;
+            highlightRemaining = HighlightDurationSeconds;
         }
 
         private void RevealNearbyEasterEggs(Vector3Int cutMin, Vector3Int cutMax)
@@ -249,11 +266,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
         private GameObject AddBoxInternal(Vector3Int min, Vector3Int max, string blockId, bool snowy, bool unstable, bool isTerrain)
         {
-            Vector3 size = new Vector3(max.x - min.x + 1, max.y - min.y + 1, max.z - min.z + 1);
-            Vector3 center = new Vector3(
-                (min.x + max.x + 1) * 0.5f,
-                (min.y + max.y + 1) * 0.5f,
-                (min.z + max.z + 1) * 0.5f);
+            DemoCoordinates.BoxCenterAndSize(min, max, out Vector3 center, out Vector3 size);
 
             bool isGrass = string.Equals(blockId, "minecraft:grass_block", StringComparison.Ordinal);
 

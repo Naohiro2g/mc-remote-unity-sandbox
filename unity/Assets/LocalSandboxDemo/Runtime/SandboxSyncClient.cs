@@ -71,6 +71,16 @@ namespace Code2Create.UnitySandbox.LocalDemo
         public float Pitch;
     }
 
+    internal enum SyncStatusKind
+    {
+        LocalOnly = 0,
+        LocalNoServer = 1,
+        Connecting = 2,
+        Online = 3,
+        OfflineLocalOk = 4,
+        OfflineReconnecting = 5
+    }
+
     /// <summary>
     /// Browser WebGL and Editor/Standalone WebSocket client for /ws/sync.
     /// Walking and local demos keep working seamlessly when offline or reconnecting.
@@ -97,6 +107,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
         private bool isConnecting;
 
         internal bool IsConnected { get; private set; }
+        internal SyncStatusKind StatusKind { get; private set; } = SyncStatusKind.LocalOnly;
         internal string StatusLabel { get; private set; } = "ローカル体験中";
         internal long LastWorldEpoch { get; private set; }
         internal long LastSeq { get; private set; }
@@ -142,6 +153,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
         {
             if (string.IsNullOrEmpty(wsUrl))
             {
+                StatusKind = SyncStatusKind.LocalNoServer;
                 StatusLabel = "ローカル体験（同期サーバー未指定）";
                 return;
             }
@@ -206,6 +218,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
         {
             if (string.IsNullOrEmpty(wsUrl)) return;
             isConnecting = true;
+            StatusKind = SyncStatusKind.Connecting;
             StatusLabel = "同期サーバーへ接続中...";
 
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -214,6 +227,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             {
                 isConnecting = false;
                 IsConnected = false;
+                StatusKind = SyncStatusKind.OfflineLocalOk;
                 StatusLabel = "オフライン（ローカル体験可）";
                 nextReconnectAt = Time.unscaledTime + 4f;
             }
@@ -228,6 +242,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             {
                 isConnecting = false;
                 IsConnected = true;
+                StatusKind = SyncStatusKind.Online;
                 StatusLabel = "オンライン（自動同期中）";
                 Connected?.Invoke();
                 return;
@@ -237,6 +252,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             {
                 isConnecting = false;
                 IsConnected = false;
+                StatusKind = SyncStatusKind.OfflineReconnecting;
                 StatusLabel = "オフライン（自動再接続待ち）";
                 nextReconnectAt = timeNow + 4f;
                 return;
