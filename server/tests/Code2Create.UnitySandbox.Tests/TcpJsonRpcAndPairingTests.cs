@@ -285,10 +285,12 @@ public class TcpJsonRpcAndPairingTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
-        // Verify /healthz advertises tcpPort
+        // Verify /healthz advertises version, protocol, and tcpPort
         using (var http = new HttpClient())
         {
             var health = JObject.Parse(await http.GetStringAsync(httpUrl + "/healthz", cts.Token));
+            Assert.Equal("2321.2.0", health["version"]!.Value<string>());
+            Assert.Equal("23.3.0", health["protocol"]!.Value<string>());
             Assert.Equal(tcpPort, health["tcpPort"]!.Value<int>());
         }
 
@@ -1031,6 +1033,172 @@ public class TcpJsonRpcAndPairingTests
 
         await wsPaired.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", cts.Token);
         await wsStranger.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", cts.Token);
+    }
+
+    [Fact]
+    public async Task CardinalYawAndDirectionVectorsMatchMcRemoteSpec()
+    {
+        var clock = new TestClock();
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            Clock = () => clock.UtcNow
+        });
+
+        await app.StartAsync();
+        string httpUrl = app.Urls.First();
+        int tcpPort = app.Services.GetRequiredService<TcpJsonRpcServer>().BoundPort;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        using var ws = new ClientWebSocket();
+        await ws.ConnectAsync(new Uri(httpUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/ws/sync?viewerId=viewer-cardinal-01"), cts.Token);
+        _ = await ReceiveWsJsonAsync(ws, cts.Token); // snapshot
+
+        string token = await PairViewerAndGetTokenAsync(tcpPort, ws, "viewer-cardinal-01", "session", cts.Token);
+        using var rpc = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
+        var helloResp = await rpc.CallAsync(1, "hello", new JObject
+        {
+            ["protocol"] = WorldConstants.ProtocolVersion,
+            ["auth"] = new JObject { ["token"] = token }
+        }, cts.Token);
+        Assert.Null(helloResp["error"]);
+        Assert.Equal("streamUpdated", (await ReceiveWsJsonAsync(ws, cts.Token))["type"]!.Value<string>());
+
+        // Unsynced initial server pose defaults to North-facing spawn (-180 deg yaw -> [0, 0, -1])
+        var initPose = await rpc.CallAsync(2, "player.getPose", new JArray(), cts.Token);
+        Assert.Equal(-180.0, initPose["result"]!["yaw"]!.Value<double>());
+        Assert.Equal(8.0, initPose["result"]!["pitch"]!.Value<double>());
+        Assert.Equal(new[] { 100.5, 63.04, 114.5 }, initPose["result"]!["pos"]!.ToObject<double[]>());
+
+        var cardinal = new (double yaw, double pitch, double[] dir)[]
+        {
+            (-180.0, 0.0, new[] { 0.0, 0.0, -1.0 }), // North
+            (-90.0,  0.0, new[] { 1.0, 0.0, 0.0 }),  // East
+            (0.0,    0.0, new[] { 0.0, 0.0, 1.0 }),  // South
+            (90.0,   0.0, new[] { -1.0, 0.0, 0.0 })  // West
+        };
+
+        int nextId = 10;
+        foreach (var c in cardinal)
+        {
+            var poseResp = await rpc.CallAsync(nextId++, "player.setPose",
+                new JArray("overworld", 0.5, 64.0, 0.5, c.yaw, c.pitch), cts.Token);
+            Assert.Equal(c.yaw, poseResp["result"]!["yaw"]!.Value<double>());
+            Assert.Equal(c.pitch, poseResp["result"]!["pitch"]!.Value<double>());
+            _ = await ReceiveWsJsonAsync(ws, cts.Token);
+
+            var dirResp = await rpc.CallAsync(nextId++, "player.getDirection", new JArray(), cts.Token);
+            var actualDir = dirResp["result"]!.ToObject<double[]>()!;
+            Assert.Equal(3, actualDir.Length);
+            Assert.True(Math.Abs(actualDir[0] - c.dir[0]) < 1e-6);
+            Assert.True(Math.Abs(actualDir[1] - c.dir[1]) < 1e-6);
+            Assert.True(Math.Abs(actualDir[2] - c.dir[2]) < 1e-6);
+
+            var setDirResp = await rpc.CallAsync(nextId++, "player.setDirection",
+                new JArray(c.dir[0], c.dir[1], c.dir[2]), cts.Token);
+            _ = await ReceiveWsJsonAsync(ws, cts.Token);
+            var getPoseAfterDir = await rpc.CallAsync(nextId++, "player.getPose", new JArray(), cts.Token);
+            Assert.Equal(c.yaw, getPoseAfterDir["result"]!["yaw"]!.Value<double>());
+            var setDirArr = setDirResp["result"]!.ToObject<double[]>()!;
+            Assert.True(Math.Abs(setDirArr[0] - c.dir[0]) < 1e-6);
+            Assert.True(Math.Abs(setDirArr[1] - c.dir[1]) < 1e-6);
+            Assert.True(Math.Abs(setDirArr[2] - c.dir[2]) < 1e-6);
+        }
+
+        // Yaw 180 canonicalizes to -180 (North)
+        var northAlias = await rpc.CallAsync(nextId++, "player.setPose", new JArray("overworld", 0.5, 64.0, 0.5, 180.0, 0.0), cts.Token);
+        Assert.Equal(-180.0, northAlias["result"]!["yaw"]!.Value<double>());
+        _ = await ReceiveWsJsonAsync(ws, cts.Token);
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", cts.Token);
+    }
+
+    [Fact]
+    public async Task CrossHostWebSocketIpAndTcpLocalhostPairingSucceeds()
+    {
+        var clock = new TestClock();
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            Clock = () => clock.UtcNow
+        });
+
+        await app.StartAsync();
+        string httpUrl = app.Urls.First(); // http://127.0.0.1:<port>
+        int tcpPort = app.Services.GetRequiredService<TcpJsonRpcServer>().BoundPort;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        // Unity Web connects using explicit IPv4 loopback URL
+        using var ws = new ClientWebSocket();
+        await ws.ConnectAsync(new Uri(httpUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/ws/sync?viewerId=viewer-cross-host"), cts.Token);
+        _ = await ReceiveWsJsonAsync(ws, cts.Token);
+
+        // Bridge/RPC client resolves "localhost" separately over TCP
+        using var beginClient = new TcpClient { NoDelay = true };
+        await beginClient.ConnectAsync("localhost", tcpPort, cts.Token);
+        string pairingId;
+        string digits;
+        using (var beginStream = beginClient.GetStream())
+        using (var reader = new StreamReader(beginStream, new UTF8Encoding(false), false, 8192, true))
+        using (var writer = new StreamWriter(beginStream, new UTF8Encoding(false), 8192, true) { NewLine = "\n", AutoFlush = true })
+        {
+            await writer.WriteLineAsync(new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = 1,
+                ["method"] = "auth.pairBegin",
+                ["params"] = new JObject { ["token_type"] = "session" }
+            }.ToString(Formatting.None));
+            var beginResp = JObject.Parse((await reader.ReadLineAsync(cts.Token))!);
+            pairingId = beginResp["result"]!["pairing_id"]!.Value<string>()!;
+            digits = beginResp["result"]!["pair_code"]!.Value<string>()!;
+        }
+
+        await SendWsJsonAsync(ws, new JObject
+        {
+            ["type"] = "chat",
+            ["viewerId"] = "viewer-cross-host",
+            ["message"] = "/mcremote pair " + digits
+        }, cts.Token);
+        var pairResult = await ReceiveWsJsonAsync(ws, cts.Token);
+        Assert.True(pairResult["approved"]!.Value<bool>());
+        _ = await ReceiveWsJsonAsync(ws, cts.Token); // streamUpdated
+
+        using var pollClient = new TcpClient { NoDelay = true };
+        await pollClient.ConnectAsync("localhost", tcpPort, cts.Token);
+        using (var pollStream = pollClient.GetStream())
+        using (var reader = new StreamReader(pollStream, new UTF8Encoding(false), false, 8192, true))
+        using (var writer = new StreamWriter(pollStream, new UTF8Encoding(false), 8192, true) { NewLine = "\n", AutoFlush = true })
+        {
+            await writer.WriteLineAsync(new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = 2,
+                ["method"] = "auth.pairPoll",
+                ["params"] = new JObject { ["pairing_id"] = pairingId }
+            }.ToString(Formatting.None));
+            var pollResp = JObject.Parse((await reader.ReadLineAsync(cts.Token))!);
+            Assert.Equal("ok", pollResp["result"]!["status"]!.Value<string>());
+            string issuedToken = pollResp["result"]!["token"]!.Value<string>()!;
+
+            await writer.WriteLineAsync(new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = 3,
+                ["method"] = "hello",
+                ["params"] = new JObject
+                {
+                    ["protocol"] = WorldConstants.ProtocolVersion,
+                    ["auth"] = new JObject { ["token"] = issuedToken }
+                }
+            }.ToString(Formatting.None));
+            var helloResp = JObject.Parse((await reader.ReadLineAsync(cts.Token))!);
+            Assert.Null(helloResp["error"]);
+        }
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", cts.Token);
     }
 
     private static async Task<string> PairViewerAndGetTokenAsync(

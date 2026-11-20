@@ -29,10 +29,10 @@ namespace Code2Create.UnitySandbox.World
         public const int DefaultEventPollLimit = 64;
         public const int MaxEventPollLimit = 256;
 
-        public const double DefaultSpawnX = 100.0;
+        public const double DefaultSpawnX = 100.5;
         public const double DefaultSpawnY = 63.04;
-        public const double DefaultSpawnZ = 86.0;
-        public const double DefaultSpawnYaw = 0.0;
+        public const double DefaultSpawnZ = 114.5;
+        public const double DefaultSpawnYaw = -180.0;
         public const double DefaultSpawnPitch = 8.0;
 
         public const int MinX = -200;

@@ -160,6 +160,18 @@
   - `THIRD-PARTY-NOTICES.txt` のフォント節から Debian パッケージ著作権行を除外し、`LICENSE_NotoSansCJK.txt` 由来の SIL Open Font License Version 1.1 全文を収録。Unity 節からイメージ未収録ファイルを示す文言を除外。
   - `Dockerfile` に `USER $APP_UID`（UID `1654`、非 root 実行）を追加（OCI `licenses` ラベルは `2026-11-17-03` に基づき `"MIT"` を維持）。WebGL 成果物は `6aeb741` ビルド（17 files / `31,934,139 bytes` = `31,933,678 bytes` + `ApplyResponsiveWebGlLayout` によるレスポンシブ CSS `461 bytes`）を再利用。
 
+## 2026-11-20 日本語IME・16m照準・マット草・右手系/北向きカメラ修正の検証（LTS `2321.2.0` / `2400` 共通ソース）
+
+- 参照ナレッジ：commit `3a265e76249484c06abe4b785d6ce5f12ce3141b`（`2026-11-19-01`, `2026-11-19-02`, `2026-11-20-01`）
+- 主な変更（`be17313` からの積み上げ）：
+  - **WebGL 日本語 IME 入力**（`SandboxWebSocket.jslib`, `LocalSandboxDemo.cs`, `DemoLocalization.cs`）：チャット入力行へ追従する透明/暗色 HTML `<input id="mc-sandbox-chat-input">` を配置し、IME 変換中の Enter 送信を抑止、`WebGLInput.captureAllKeyboardInput` を自動切替（`T` / `/` / `Escape` / ペースト連動）。Ubuntu Chrome、Windows Chrome/Edge、macOS Chrome/Safari、iPadOS Safari/Chrome で確認（旧型 iPhone Safari は WebAssembly 2023 非対応）。
+  - **照準 16m 制限・外れ表示・ヘアライン枠・完全マット草**：照準レイキャストと黒ヘアライン枠を `16m` へ統一し、外れ時 `[-]` / 原点未同期時 `[ - - - ]` 表示を追加。`GrassTop` を `_Metallic=0` / `_Glossiness=0` / `_SPECULARHIGHLIGHTS_OFF` にし、土も低光沢化。
+  - **右手系（Z 反転 `u = (mc.x, mc.y, -mc.z)`）と北向き初期カメラ（`2026-11-20-01` ④）**：Unity 描画座標の Z 軸を反転して「北（`mcYaw=-180`）を向くと東（`+X`）が右・南（`+Z`）が手前・上（`+Y`）が上」へ統一。初期スポーンを区画8の南側 `(100.5, 63.04, 114.5)`・北向き（`yaw=-180`, `pitch=8`）、右下区画ボタンを北上段（`0,1,2` / `3,4,5` / `6,7,8`）、全区画ラベル向き・淡緑色を統一（wire 値は McRemote 互換のまま不変）。
+- 検証結果：
+  - `dotnet test server/Code2Create.UnitySandbox.sln --nologo` -> **26/26** 合格（失敗 0、スキップ 0）
+  - `DemoEditor.Validate` -> `LOCAL_SANDBOX_VALIDATION_PASS: right-handed north view, negative/relative coordinates, plots, warp, highlight, dug terrain, six hit faces, ground, replace/remove, 16m HUD target, scene reset`（Z 反転を外すと `InvalidOperationException: Local sandbox validation failed: cell center` で失敗することも確認）
+  - `DemoPlaySmoke.Run` -> `LOCAL_SANDBOX_PLAY_SMOKE_PASS: Start initialization, feet y=63, walking, ground collision, eye offset`
+
 - 日付・端末・OS・Unity／ブラウザの版：
 - 場面・ブロック数・変えた設定：
 - 試す前の予想：

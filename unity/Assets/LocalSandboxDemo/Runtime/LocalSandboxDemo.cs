@@ -128,19 +128,20 @@ namespace Code2Create.UnitySandbox.LocalDemo
             for (int i = 0; i < 9; i++)
             {
                 var origin = DemoCoordinates.PlotOrigin(i);
-                var color = i == 4 ? new Color(1, .8f, .2f) : i == 8 ? new Color(.2f, .8f, 1) : new Color(.85f, .9f, .75f);
-                var p = (Vector3)origin + new Vector3(0.5f, 63.025f, 0.5f);
-                Line("Origin " + i + " +X", color, .12f, new[] { p, p + Vector3.right * 48.5f });
-                DottedLine("Origin " + i + " -X", color, .12f, p, p + Vector3.left * 48.5f, 48);
-                Line("Origin " + i + " +Z", color, .12f, new[] { p, p + Vector3.forward * 48.5f });
-                DottedLine("Origin " + i + " -Z", color, .12f, p, p + Vector3.back * 48.5f, 48);
-                DottedLine("Origin " + i + " Y", color, .12f, p, new Vector3(p.x, 96.0f, p.z), 33);
+                var color = new Color(.85f, .9f, .75f);
+                var mcP = new Vector3(origin.x + 0.5f, 63.025f, origin.z + 0.5f);
+                var p = DemoCoordinates.McToUnityPos(mcP);
+                Line("Origin " + i + " +X", color, .12f, new[] { p, DemoCoordinates.McToUnityPos(mcP + new Vector3(48.5f, 0f, 0f)) });
+                DottedLine("Origin " + i + " -X", color, .12f, p, DemoCoordinates.McToUnityPos(mcP + new Vector3(-48.5f, 0f, 0f)), 48);
+                Line("Origin " + i + " +Z", color, .12f, new[] { p, DemoCoordinates.McToUnityPos(mcP + new Vector3(0f, 0f, 48.5f)) });
+                DottedLine("Origin " + i + " -Z", color, .12f, p, DemoCoordinates.McToUnityPos(mcP + new Vector3(0f, 0f, -48.5f)), 48);
+                DottedLine("Origin " + i + " Y", color, .12f, p, DemoCoordinates.McToUnityPos(new Vector3(mcP.x, 96.0f, mcP.z)), 33);
                 CreatePlotLabel(i, origin, color);
             }
 
             var sunObject = new GameObject("Demo sun");
             sunObject.transform.SetParent(generated.transform, false);
-            sunObject.transform.position = new Vector3(100, 160, 100);
+            sunObject.transform.position = DemoCoordinates.McToUnityPos(new Vector3(100f, 160f, 100f));
             sunObject.transform.rotation = Quaternion.Euler(48, -30, 0);
             var sun = sunObject.AddComponent<Light>();
             sun.type = LightType.Directional;
@@ -219,7 +220,8 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
             var labelGo = new GameObject($"PlotLabel_{index}");
             labelGo.transform.SetParent(generated.transform, false);
-            labelGo.transform.position = new Vector3(origin.x + 0.5f, 100f, origin.z + 0.5f);
+            labelGo.transform.position = DemoCoordinates.McToUnityPos(new Vector3(origin.x + 0.5f, 100f, origin.z + 0.5f));
+            labelGo.transform.rotation = Quaternion.identity;
             var textMesh = labelGo.AddComponent<TextMesh>();
             textMesh.text = labelText;
             textMesh.fontSize = 72;
@@ -244,7 +246,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
             var shadowGo = new GameObject("Shadow");
             shadowGo.transform.SetParent(labelGo.transform, false);
-            shadowGo.transform.localPosition = new Vector3(0.08f, -0.08f, 0f);
+            shadowGo.transform.localPosition = new Vector3(0.08f, -0.08f, 0.02f);
             var shadowMesh = shadowGo.AddComponent<TextMesh>();
             shadowMesh.text = labelText;
             shadowMesh.fontSize = 72;
@@ -311,14 +313,14 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 if (!alternate)
                 {
                     for (int x = 0; x < 10; x++) blocks.Put(start + new Vector3Int(x, 0, 0), kind);
-                    for (int y = 0; y < columnHeight; y++) blocks.Put(start + new Vector3Int(4, y, 4), kind);
+                    for (int y = 0; y < columnHeight; y++) blocks.Put(start + new Vector3Int(4, y, -4), kind);
                 }
                 else
                 {
                     for (int x = 0; x < 5; x++)
                     for (int y = 0; y < 3; y++) blocks.Put(start + new Vector3Int(x, y, 0), kind);
                     for (int step = 0; step < 4; step++)
-                    for (int y = 0; y <= step; y++) blocks.Put(start + new Vector3Int(step, y, 5), kind);
+                    for (int y = 0; y <= step; y++) blocks.Put(start + new Vector3Int(step, y, -5), kind);
                 }
             }
             Physics.SyncTransforms();
@@ -643,8 +645,8 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
             float minX = cell.x - pad;
             float maxX = cell.x + 1f + pad;
-            float minZ = cell.z - pad;
-            float maxZ = cell.z + 1f + pad;
+            float minZ = -(cell.z + 1f) - pad;
+            float maxZ = -cell.z + pad;
             float minY = restsOnGrass ? (cell.y + 0.01f + pad * 0.5f) : (cell.y - pad);
             float maxY = isGrassBlock ? (cell.y + 1.01f + pad) : (cell.y + 1f + pad);
 
@@ -843,7 +845,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             }
         }
 
-        private void BuildMcRemoteHudLines(out string richLine, out string plainLine)
+        internal void BuildMcRemoteHudLines(out string richLine, out string plainLine)
         {
             string absHex;
             string relHex;
@@ -865,8 +867,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
             FormatHudCoordinates(absCell, displayOrigin, relativeOriginAvailable, out string absText, out string relText);
 
-            Vector3 fwd = walker.transform.forward;
-            float compassDeg = (Mathf.Atan2(fwd.x, -fwd.z) * Mathf.Rad2Deg + 360f) % 360f;
+            float compassDeg = DemoCoordinates.CompassAzimuthDegrees(walker.transform.forward);
             int dirIdx = Mathf.FloorToInt((compassDeg + 22.5f) / 45f) % 8;
             string dirLabel = DemoText.CompassDir(currentLang, dirIdx);
             string dirHex = ColorUtility.ToHtmlStringRGB(Color.HSVToRGB(compassDeg / 360f, 0.40f, 0.90f));
@@ -1102,7 +1103,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             GUI.Box(rightRect, GUIContent.none, darkBoxStyle);
             GUILayout.BeginArea(new Rect(rightRect.x + 6f, rightRect.y + 4f, rightRect.width - 12f, rightRect.height - 8f));
 
-            for (int row = 2; row >= 0; row--)
+            for (int row = 0; row < 3; row++)
             {
                 GUILayout.BeginHorizontal();
                 for (int col = 0; col < 3; col++)

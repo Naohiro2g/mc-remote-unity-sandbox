@@ -34,8 +34,8 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
         internal void Initialize(Vector3Int origin)
         {
-            // transform.positionを足の基準点にする。
-            spawn = new Vector3(origin.x, 63.04f, origin.z - 14);
+            // transform.positionはUnity座標の足位置。区画8の南側(+Z)から北(-mcZ = Unity +Z)向きに初期配置する。
+            spawn = DemoCoordinates.McToUnityPos(new Vector3(origin.x + 0.5f, 63.04f, origin.z + 14.5f));
             transform.position = spawn;
             body = gameObject.AddComponent<CharacterController>();
             body.height = 1.8f;
@@ -152,7 +152,8 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 body.Move(movement * Time.deltaTime);
             }
 
-            if (transform.position.y < -70 || Mathf.Abs(transform.position.x) > 205 || Mathf.Abs(transform.position.z) > 205)
+            Vector3 mcPos = DemoCoordinates.UnityToMcPos(transform.position);
+            if (mcPos.y < -70f || Mathf.Abs(mcPos.x) > 205f || Mathf.Abs(mcPos.z) > 205f)
             {
                 ResetPose();
             }
@@ -176,19 +177,20 @@ namespace Code2Create.UnitySandbox.LocalDemo
         internal void WarpToPlot(int plotIndex)
         {
             var origin = DemoCoordinates.PlotOrigin(plotIndex);
-            var targetPos = new Vector3(origin.x + 5f, 96f, origin.z - 40f);
-            var lookTarget = new Vector3(origin.x, 96f, origin.z);
+            var mcTargetPos = new Vector3(origin.x + 5.5f, 96f, origin.z + 40.5f);
+            var mcLookTarget = new Vector3(origin.x + 0.5f, 96f, origin.z + 0.5f);
             isFlying = true;
-            WarpTo(targetPos, lookTarget);
+            WarpTo(DemoCoordinates.McToUnityPos(mcTargetPos), DemoCoordinates.McToUnityPos(mcLookTarget));
         }
 
         internal void WarpNearCell(Vector3Int cell)
         {
             var lookTarget = DemoCoordinates.Center(cell);
-            var targetPos = new Vector3(cell.x, Mathf.Max(63.04f, cell.y + 1.04f), cell.z - 8f);
-            targetPos.x = Mathf.Clamp(targetPos.x, -198f, 198f);
-            targetPos.z = Mathf.Clamp(targetPos.z, -198f, 198f);
-            WarpTo(targetPos, lookTarget);
+            var mcTargetPos = new Vector3(
+                Mathf.Clamp(cell.x + 0.5f, -198f, 198f),
+                Mathf.Max(63.04f, cell.y + 1.04f),
+                Mathf.Clamp(cell.z + 8.5f, -198f, 198f));
+            WarpTo(DemoCoordinates.McToUnityPos(mcTargetPos), lookTarget);
         }
 
         private void WarpTo(Vector3 targetPos, Vector3 lookTarget)
@@ -232,28 +234,32 @@ namespace Code2Create.UnitySandbox.LocalDemo
             body.enabled = true;
             verticalSpeed = 0;
             pitch = 8;
-            View.transform.localRotation = Quaternion.Euler(pitch, 0, 0);
+            if (View != null)
+            {
+                View.transform.localPosition = Vector3.up * 1.6f;
+                View.transform.localRotation = Quaternion.Euler(pitch, 0, 0);
+            }
         }
 
         internal void GetMinecraftPose(out Vector3 feetPos, out float mcYaw, out float mcPitch)
         {
-            feetPos = transform.position;
-            float rawYaw = -transform.eulerAngles.y % 360f;
-            if (rawYaw >= 180f) rawYaw -= 360f;
-            else if (rawYaw < -180f) rawYaw += 360f;
-            mcYaw = rawYaw == 0f ? 0f : rawYaw;
+            feetPos = DemoCoordinates.UnityToMcPos(transform.position);
+            mcYaw = DemoCoordinates.UnityEulerYToMcYaw(transform.eulerAngles.y);
             mcPitch = pitch == 0f ? 0f : pitch;
         }
 
         internal void ApplyRemotePose(bool hasPos, Vector3 targetPos, bool hasRotation, float mcYaw, float mcPitch)
         {
             if (body == null) return;
-            Quaternion targetRot = hasRotation ? Quaternion.Euler(0f, -mcYaw, 0f) : transform.rotation;
+            Quaternion targetRot = hasRotation
+                ? Quaternion.Euler(0f, DemoCoordinates.McYawToUnityEulerY(mcYaw), 0f)
+                : transform.rotation;
 
             if (hasPos)
             {
+                Vector3 unityTargetPos = DemoCoordinates.McToUnityPos(targetPos);
                 body.enabled = false;
-                transform.SetPositionAndRotation(targetPos, targetRot);
+                transform.SetPositionAndRotation(unityTargetPos, targetRot);
                 body.enabled = true;
                 verticalSpeed = 0f;
             }

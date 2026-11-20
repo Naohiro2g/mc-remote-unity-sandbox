@@ -161,11 +161,8 @@ namespace Code2Create.UnitySandbox.LocalDemo
                 highlightCube.GetComponent<Renderer>().sharedMaterial = palette.Highlight;
             }
 
-            Vector3 size = new Vector3(max.x - min.x + 1.06f, max.y - min.y + 1.06f, max.z - min.z + 1.06f);
-            Vector3 center = new Vector3(
-                (min.x + max.x + 1) * 0.5f,
-                (min.y + max.y + 1) * 0.5f,
-                (min.z + max.z + 1) * 0.5f);
+            DemoCoordinates.BoxCenterAndSize(min, max, out Vector3 center, out Vector3 rawSize);
+            Vector3 size = rawSize + new Vector3(0.06f, 0.06f, 0.06f);
 
             highlightCube.transform.position = center;
             highlightCube.transform.localScale = size;
@@ -269,11 +266,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
         private GameObject AddBoxInternal(Vector3Int min, Vector3Int max, string blockId, bool snowy, bool unstable, bool isTerrain)
         {
-            Vector3 size = new Vector3(max.x - min.x + 1, max.y - min.y + 1, max.z - min.z + 1);
-            Vector3 center = new Vector3(
-                (min.x + max.x + 1) * 0.5f,
-                (min.y + max.y + 1) * 0.5f,
-                (min.z + max.z + 1) * 0.5f);
+            DemoCoordinates.BoxCenterAndSize(min, max, out Vector3 center, out Vector3 size);
 
             bool isGrass = string.Equals(blockId, "minecraft:grass_block", StringComparison.Ordinal);
 
