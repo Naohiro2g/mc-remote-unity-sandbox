@@ -41,6 +41,8 @@ namespace Code2Create.UnitySandbox.Server.Rpc
         private readonly string serverName;
         private readonly int buildRange;
         private readonly string serverVersion;
+        private readonly PairBeginRateLimiter? pairBeginRateLimiter;
+        private readonly string? remoteAddressKey;
         private readonly SandboxEventRing eventRing = new SandboxEventRing();
         private readonly SandboxJsonRpcDispatcher dispatcher;
         private readonly string sessionId = "sess_" + Guid.NewGuid().ToString("N").Substring(0, 12);
@@ -61,7 +63,9 @@ namespace Code2Create.UnitySandbox.Server.Rpc
             bool authEnforcement = true,
             string serverName = WorldConstants.DefaultServerName,
             int buildRange = WorldConstants.DefaultBuildRange,
-            string serverVersion = WorldConstants.DefaultServerVersion)
+            string serverVersion = WorldConstants.DefaultServerVersion,
+            PairBeginRateLimiter? pairBeginRateLimiter = null,
+            string? remoteAddressKey = null)
         {
             this.world = world ?? throw new ArgumentNullException(nameof(world));
             this.bindingStore = bindingStore ?? throw new ArgumentNullException(nameof(bindingStore));
@@ -73,6 +77,8 @@ namespace Code2Create.UnitySandbox.Server.Rpc
             this.serverName = string.IsNullOrEmpty(serverName) ? WorldConstants.DefaultServerName : serverName;
             this.buildRange = buildRange;
             this.serverVersion = string.IsNullOrWhiteSpace(serverVersion) ? WorldConstants.DefaultServerVersion : serverVersion;
+            this.pairBeginRateLimiter = pairBeginRateLimiter;
+            this.remoteAddressKey = remoteAddressKey;
 
             dispatcher = new SandboxJsonRpcDispatcher(
                 this.world,
@@ -189,7 +195,7 @@ namespace Code2Create.UnitySandbox.Server.Rpc
             switch (method)
             {
                 case "auth.pairBegin":
-                    return ExecuteWithResponse(idToken, false, () => HandlePairBegin(paramsToken));
+                    return HandlePairBeginStep(idToken, paramsToken);
 
                 case "auth.pairPoll":
                     return ExecuteWithResponse(idToken, false, () => HandlePairPoll(paramsToken));
@@ -207,6 +213,43 @@ namespace Code2Create.UnitySandbox.Server.Rpc
                         ? SandboxJsonRpcDispatcher.BuildErrorResponse(idToken, SandboxProtocolError.ExpectedHello())
                         : null;
                     return new SandboxRpcStepResult(err, true);
+            }
+        }
+
+        private SandboxRpcStepResult HandlePairBeginStep(JToken? idToken, JToken? paramsToken)
+        {
+            DateTimeOffset now = clock();
+            if (pairBeginRateLimiter != null && !pairBeginRateLimiter.TryAcquire(remoteAddressKey, now))
+            {
+                return new SandboxRpcStepResult(null, true);
+            }
+
+            try
+            {
+                ValidatePairBeginParams(paramsToken, out string tokenType, out string? device);
+                var begun = pairingStore.TryBeginPairing(tokenType, device, now);
+                if (begun == null)
+                {
+                    return new SandboxRpcStepResult(null, true);
+                }
+
+                var result = new JObject
+                {
+                    ["pairing_id"] = begun.PairingId,
+                    ["pair_code"] = begun.PairCode,
+                    ["expires_in"] = begun.ExpiresIn
+                };
+                string? resp = idToken != null
+                    ? SandboxJsonRpcDispatcher.BuildSuccessResponse(idToken, result)
+                    : null;
+                return new SandboxRpcStepResult(resp, false);
+            }
+            catch (SandboxOperationException ex)
+            {
+                string? resp = idToken != null
+                    ? SandboxJsonRpcDispatcher.BuildErrorResponse(idToken, ex.Error)
+                    : null;
+                return new SandboxRpcStepResult(resp, false);
             }
         }
 
@@ -232,14 +275,14 @@ namespace Code2Create.UnitySandbox.Server.Rpc
             }
         }
 
-        private JToken HandlePairBegin(JToken? paramsToken)
+        private static void ValidatePairBeginParams(JToken? paramsToken, out string tokenType, out string? device)
         {
             if (paramsToken is not JObject paramsObj)
             {
                 throw new SandboxOperationException(SandboxProtocolError.InvalidParams("params"));
             }
 
-            string tokenType = "session";
+            tokenType = "session";
             if (paramsObj.TryGetValue("token_type", StringComparison.Ordinal, out var typeToken))
             {
                 if (typeToken.Type != JTokenType.String)
@@ -255,7 +298,7 @@ namespace Code2Create.UnitySandbox.Server.Rpc
                 tokenType = rawType;
             }
 
-            string? device = null;
+            device = null;
             if (paramsObj.TryGetValue("device", StringComparison.Ordinal, out var deviceToken) &&
                 deviceToken.Type != JTokenType.Null)
             {
@@ -278,14 +321,6 @@ namespace Code2Create.UnitySandbox.Server.Rpc
             {
                 throw new SandboxOperationException(SandboxProtocolError.InvalidParams("params.client"));
             }
-
-            var begun = pairingStore.BeginPairing(tokenType, device, clock());
-            return new JObject
-            {
-                ["pairing_id"] = begun.PairingId,
-                ["pair_code"] = begun.PairCode,
-                ["expires_in"] = begun.ExpiresIn
-            };
         }
 
         private JToken HandlePairPoll(JToken? paramsToken)

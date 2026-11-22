@@ -172,6 +172,11 @@
   - `DemoEditor.Validate` -> `LOCAL_SANDBOX_VALIDATION_PASS: right-handed north view, negative/relative coordinates, plots, warp, highlight, dug terrain, six hit faces, ground, replace/remove, 16m HUD target, scene reset`（Z 反転を外すと `InvalidOperationException: Local sandbox validation failed: cell center` で失敗することも確認）
   - `DemoPlaySmoke.Run` -> `LOCAL_SANDBOX_PLAY_SMOKE_PASS: Start initialization, feet y=63, walking, ground collision, eye offset`
 
+## 2026-11-22 外部 TCP 開放向け接続・ペアリング・フレーム長上限の実装（`2026-11-20-04`）
+
+- ナレッジ参照：`2026-11-20-04` / McRemote `2026-10-07-02`・`2026-11-13-02`
+- `SandboxConnectionLimits` により、TCP 同時接続（全体 `64`／hello 前 `32`／IP 別 `32`）、hello 前待機（無通信 `30` 秒・合計 `180` 秒）＋hello 後 TCP keepalive（約 5 分：`60s/30s/8回`）、`auth.pairBegin` レート（IP 別 `20/60s`・全体 `20/s` かつ `120/60s`）、承認待ち `pair_code`（`128` 件）、未 poll `byId` 猶予後自動掃除（期限後 `+60s`・総数上限 `256`）、TCP 1 行上限（`65,536` bytes）、`/ws/sync` 受信上限（`65,536` bytes, 超過時 WS `1009 MessageTooBig`）を実装（超過時は新 wire error を増やさず切断）。
+
 - 日付・端末・OS・Unity／ブラウザの版：
 - 場面・ブロック数・変えた設定：
 - 試す前の予想：

@@ -81,3 +81,12 @@ Bridge 経由の Scratch および一般の McRemote クライアント向けに
   - **公開ポート**: `8080/tcp`（HTTP WebGL + `/ws/sync` + `/healthz`）、`25585/tcp`（TCP JSON-RPC 2.0）。
   - **ボリューム**: 不要（状態・トークン・紐付けはすべてインメモリ保持、`2026-11-15-06`）。
   - **候補タグ運用（`2026-11-17-02`）**: `scripts/build-container.sh` は `VERSION` を確定した GitHub コミットから `ghcr.io/naohiro2g/mc-remote-unity-sandbox:candidate-<7桁>` としてビルドし、凍結前公開タグでの GHCR 照合後に同一ダイジェストへ `v2321.2.0` を付与する（通常のローカル `build-container.sh` 自体は自動 `push` を行わない）。
+
+## 7. 外部 TCP 開放に伴うサーバー資源制限（`2026-11-20-04`, McRemote `2026-10-07-02` 準拠）
+
+公開 VPS で Unity 箱庭の TCP ポートを外へ開けるにあたり、McRemote 方針（認証前の資源制限・1行サイズ超過は新しいエラー reason を増やさず接続を閉じるのみ）と接続生存確認方針（`2026-11-13-02`）に揃え、`SandboxConnectionLimits` により以下を既定適用する。
+
+- **TCP 同時接続数**: 全体最大 `64`、hello 完了前最大 `32`（`hello` 成功で hello 済み枠へ昇格）、送り元 IP 別最大 `32`（IPv4 射影 IPv6 は IPv4 へ正規化）。超過接続は即座に TCP を閉じる。
+- **hello 前の待機時間と hello 後の生存確認**: hello 前の無通信上限 `30` 秒（1行完了まで）・接続からの合計期限 `180` 秒（超過時は pending pairing を消さず TCP のみ切断し別接続からの継続を許容）。hello 後は無通信切断を行わず、TCP keepalive（idle `60` 秒・interval `30` 秒・retry `8` 回、無応答約 `5` 分回収）を有効化する。
+- **`auth.pairBegin` と承認待ち `pair_code`**: `PairBeginRateLimiter` により送り元 IP 別 `20` 回/`60` 秒・全体 `20` 回/`1` 秒かつ `120` 回/`60` 秒（超過時は応答なしで TCP 切断）。未承認アクティブ `pair_code` 上限は `128` 件、期限切れ（`120` 秒）後 `+60` 秒猶予（この間は `auth.pairPoll` へ `pair_expired` を維持）を過ぎた未 poll レコードは `byId` から自動削除し、ハード総数上限 `256` 件到達時は期限切れの古い順から退去（すべて有効期間内なら拒否切断）とする。
+- **フレームサイズ上限**: TCP 1 行最大 `65,536` bytes（`64 KiB`、`\n` 待機中に超過時点で読み込みを打ち切り即 TCP 切断。hello 前後共通）。Unity Web `/ws/sync` の受信 1 メッセージ最大 `65,536` bytes（`64 KiB`、超過時は `1009 MessageTooBig` で切断）。

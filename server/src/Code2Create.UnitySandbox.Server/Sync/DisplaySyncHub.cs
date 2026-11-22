@@ -28,6 +28,7 @@ namespace Code2Create.UnitySandbox.Server.Sync
         private readonly ISandboxTokenStore tokenStore;
         private readonly PairingRateLimiter rateLimiter;
         private readonly Func<DateTimeOffset> clock;
+        private readonly int maxMessageBytes;
         private readonly ConcurrentDictionary<string, SyncConnection> connections = new ConcurrentDictionary<string, SyncConnection>(StringComparer.Ordinal);
         private readonly object poseGate = new object();
         private readonly Dictionary<string, ViewerPoseEntry> viewerPoses = new Dictionary<string, ViewerPoseEntry>(StringComparer.Ordinal);
@@ -41,14 +42,17 @@ namespace Code2Create.UnitySandbox.Server.Sync
             IPairingApprovalStore pairingStore,
             PairingRateLimiter? rateLimiter = null,
             Func<DateTimeOffset>? clock = null,
-            ISandboxTokenStore? tokenStore = null)
+            ISandboxTokenStore? tokenStore = null,
+            int maxMessageBytes = 65_536)
         {
+            if (maxMessageBytes <= 0) throw new ArgumentOutOfRangeException(nameof(maxMessageBytes));
             this.world = world ?? throw new ArgumentNullException(nameof(world));
             this.bindingStore = bindingStore ?? throw new ArgumentNullException(nameof(bindingStore));
             this.pairingStore = pairingStore ?? throw new ArgumentNullException(nameof(pairingStore));
             this.rateLimiter = rateLimiter ?? new PairingRateLimiter();
             this.clock = clock ?? (() => DateTimeOffset.UtcNow);
             this.tokenStore = tokenStore ?? new InMemorySandboxTokenStore();
+            this.maxMessageBytes = maxMessageBytes;
 
             this.world.BlockDeltaEmitted += OnBlockDeltaEmitted;
             this.world.ChatEmitted += OnChatEmitted;
@@ -170,7 +174,7 @@ namespace Code2Create.UnitySandbox.Server.Sync
                 var buffer = new byte[16 * 1024];
                 while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
                 {
-                    string? message = await ReceiveTextMessageAsync(socket, buffer, cancellationToken).ConfigureAwait(false);
+                    string? message = await ReceiveTextMessageAsync(socket, buffer, maxMessageBytes, cancellationToken).ConfigureAwait(false);
                     if (message == null) break;
                     await HandleClientMessageAsync(conn, message, cancellationToken).ConfigureAwait(false);
                 }
@@ -517,7 +521,11 @@ namespace Code2Create.UnitySandbox.Server.Sync
             };
         }
 
-        private static async Task<string?> ReceiveTextMessageAsync(WebSocket socket, byte[] buffer, CancellationToken cancellationToken)
+        private static async Task<string?> ReceiveTextMessageAsync(
+            WebSocket socket,
+            byte[] buffer,
+            int maxMessageBytes,
+            CancellationToken cancellationToken)
         {
             using var ms = new System.IO.MemoryStream();
             while (true)
@@ -529,6 +537,24 @@ namespace Code2Create.UnitySandbox.Server.Sync
                     {
                         await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, string.Empty, cancellationToken)
                             .ConfigureAwait(false);
+                    }
+                    return null;
+                }
+
+                if (result.Count > maxMessageBytes - ms.Length)
+                {
+                    using var closeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    closeCts.CancelAfter(TimeSpan.FromSeconds(2));
+                    try
+                    {
+                        if (socket.State == WebSocketState.Open || socket.State == WebSocketState.CloseReceived)
+                        {
+                            await socket.CloseOutputAsync(WebSocketCloseStatus.MessageTooBig, "message too big", closeCts.Token)
+                                .ConfigureAwait(false);
+                        }
+                    }
+                    catch
+                    {
                     }
                     return null;
                 }
