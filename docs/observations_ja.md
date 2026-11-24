@@ -139,6 +139,44 @@
   - `DemoPlaySmoke.Run`（クリーンコピー上で `-quit` なし実行後削除）-> `LOCAL_SANDBOX_PLAY_SMOKE_PASS: Start initialization, feet y=63, walking, ground collision, eye offset`
   - `DemoEditor.BuildWebGL` -> `LOCAL_SANDBOX_WEBGL_BUILD_PASS`（`26499670 bytes`）
 
+## 2026-11-17 UI/UX改善・等幅フォント・日英切替・ワープ上空化・ピンク配置発光の検証
+
+- Unity：**6000.6.8f1**、Linux、Built-in Render Pipeline、Input Manager、WebGL
+- 等幅フォント：`NotoSansCJK-Regular.ttc`（`--font-number=5`、`Noto Sans Mono CJK JP`）サブセット（`11,128,896 bytes`）へ更新し、パネル・入力欄・3D 区画看板を含め等幅表示化。
+- UI/UX・多言語・操作改善：
+  - 左上パネルに常時表示の大きめ太字等幅座標行（`20px`／狭幅 `16px`、黒 `0.8px` ドロップシャドウ `α=0.72`、照準相対座標 `#FF85D6`、パネル背景 `α=0.55`、`[脚]`/`[照準]` ⇔ `[Legs]`/`[Target]`）・対象切替・移動速度切替（`速度×1`/`速度×2`）・`たたむ`/`ひらく` を配置し、展開時に詳細行・`再同期`・`全画面`・`EN`/`JA` 日英切替を表示。
+  - 左下チャットを固定太字タイトル・ピクセルクリップ／ホイール対応ログ領域（最大80行）・固定入力行の3領域へ完全分離し、`/`（先頭 `/` 入力済み・キャレット末尾）・`T`・全域クリック・送信後フォーカス維持に対応。
+  - 右下パネルの高さを左下チャットと全画面幅で統一し、各区画ワープを上空相対 `(5, 96, -40)`（仮想原点 `(0, 96, 0)` 向き・フライト状態）へ変更、ピンク色 0.5 秒配置発光の `発光:ON`/`発光:OFF` トグル・4行キー案内を追加。
+  - WebGL プラグインへ `beforeunload` ガード・ブラウザショートカット抑止・フルスクリーン時 `navigator.keyboard.lock` を追加。
+- 検証結果：
+  - `dotnet test server/Code2Create.UnitySandbox.sln --nologo` -> **24/24** 合格（失敗 0、スキップ 0）
+  - `DemoEditor.Validate` -> `LOCAL_SANDBOX_VALIDATION_PASS: negative/relative coordinates, plots, warp, highlight, dug terrain, six hit faces, ground, replace/remove, scene reset`
+  - `DemoPlaySmoke.Run`（クリーンコピー上で `-quit` なし実行後削除）-> `LOCAL_SANDBOX_PLAY_SMOKE_PASS: Start initialization, feet y=63, walking, ground collision, eye offset`
+  - `DemoEditor.BuildWebGL` -> `LOCAL_SANDBOX_WEBGL_BUILD_PASS`（`31933672 bytes`）
+- `2321.2.0` 公開候補準備（ナレッジ `f72d5bf6e304e6a36f60b7ec9b6b300ce8b46926`、`2026-11-17-01`/`02` 反映）：
+  - `VERSION` を `2321.2.0` へ更新、`THIRD-PARTY-NOTICES.txt`（MIT・SIL OFL 1.1・Newtonsoft.Json・.NET 9・Unity WebGL Player Runtime 帰属表示）を新設し `Dockerfile`（`/app/` および `/app/wwwroot/THIRD-PARTY-NOTICES.txt`）へ同梱（OCI `licenses` は `MIT` 維持）。
+  - `dotnet test server/Code2Create.UnitySandbox.sln --nologo` -> **24/24** 合格、`DemoEditor.Validate` -> `LOCAL_SANDBOX_VALIDATION_PASS`、`DemoEditor.BuildWebGL` -> `LOCAL_SANDBOX_WEBGL_BUILD_PASS`（`31933678 bytes`、`ProjectSettings.bundleVersion: 2321.2.0` 反映）。
+- `2321.2.0` 候補作り直し（ナレッジ `77ecc7a1d71a3c88bcd9df5d2d62db7b9cc46160`、`2026-11-17-03` 反映）：
+  - `THIRD-PARTY-NOTICES.txt` のフォント節から Debian パッケージ著作権行を除外し、`LICENSE_NotoSansCJK.txt` 由来の SIL Open Font License Version 1.1 全文を収録。Unity 節からイメージ未収録ファイルを示す文言を除外。
+  - `Dockerfile` に `USER $APP_UID`（UID `1654`、非 root 実行）を追加（OCI `licenses` ラベルは `2026-11-17-03` に基づき `"MIT"` を維持）。WebGL 成果物は `6aeb741` ビルド（17 files / `31,934,139 bytes` = `31,933,678 bytes` + `ApplyResponsiveWebGlLayout` によるレスポンシブ CSS `461 bytes`）を再利用。
+
+## 2026-11-20 日本語IME・16m照準・マット草・右手系/北向きカメラ修正の検証（LTS `2321.2.0` / `2400` 共通ソース）
+
+- 参照ナレッジ：commit `3a265e76249484c06abe4b785d6ce5f12ce3141b`（`2026-11-19-01`, `2026-11-19-02`, `2026-11-20-01`）
+- 主な変更（`be17313` からの積み上げ）：
+  - **WebGL 日本語 IME 入力**（`SandboxWebSocket.jslib`, `LocalSandboxDemo.cs`, `DemoLocalization.cs`）：チャット入力行へ追従する透明/暗色 HTML `<input id="mc-sandbox-chat-input">` を配置し、IME 変換中の Enter 送信を抑止、`WebGLInput.captureAllKeyboardInput` を自動切替（`T` / `/` / `Escape` / ペースト連動）。Ubuntu Chrome、Windows Chrome/Edge、macOS Chrome/Safari、iPadOS Safari/Chrome で確認（旧型 iPhone Safari は WebAssembly 2023 非対応）。
+  - **照準 16m 制限・外れ表示・ヘアライン枠・完全マット草**：照準レイキャストと黒ヘアライン枠を `16m` へ統一し、外れ時 `[-]` / 原点未同期時 `[ - - - ]` 表示を追加。`GrassTop` を `_Metallic=0` / `_Glossiness=0` / `_SPECULARHIGHLIGHTS_OFF` にし、土も低光沢化。
+  - **右手系（Z 反転 `u = (mc.x, mc.y, -mc.z)`）と北向き初期カメラ（`2026-11-20-01` ④）**：Unity 描画座標の Z 軸を反転して「北（`mcYaw=-180`）を向くと東（`+X`）が右・南（`+Z`）が手前・上（`+Y`）が上」へ統一。初期スポーンを区画8の南側 `(100.5, 63.04, 114.5)`・北向き（`yaw=-180`, `pitch=8`）、右下区画ボタンを北上段（`0,1,2` / `3,4,5` / `6,7,8`）、全区画ラベル向き・淡緑色を統一（wire 値は McRemote 互換のまま不変）。
+- 検証結果：
+  - `dotnet test server/Code2Create.UnitySandbox.sln --nologo` -> **26/26** 合格（失敗 0、スキップ 0）
+  - `DemoEditor.Validate` -> `LOCAL_SANDBOX_VALIDATION_PASS: right-handed north view, negative/relative coordinates, plots, warp, highlight, dug terrain, six hit faces, ground, replace/remove, 16m HUD target, scene reset`（Z 反転を外すと `InvalidOperationException: Local sandbox validation failed: cell center` で失敗することも確認）
+  - `DemoPlaySmoke.Run` -> `LOCAL_SANDBOX_PLAY_SMOKE_PASS: Start initialization, feet y=63, walking, ground collision, eye offset`
+
+## 2026-11-22 外部 TCP 開放向け接続・ペアリング・フレーム長上限の実装（`2026-11-20-04`）
+
+- ナレッジ参照：`2026-11-20-04` / McRemote `2026-10-07-02`・`2026-11-13-02`
+- `SandboxConnectionLimits` により、TCP 同時接続（全体 `64`／hello 前 `32`／IP 別 `32`）、hello 前待機（無通信 `30` 秒・合計 `180` 秒）＋hello 後 TCP keepalive（約 5 分：`60s/30s/8回`）、`auth.pairBegin` レート（IP 別 `20/60s`・全体 `20/s` かつ `120/60s`）、承認待ち `pair_code`（`128` 件）、未 poll `byId` 猶予後自動掃除（期限後 `+60s`・総数上限 `256`）、TCP 1 行上限（`65,536` bytes）、`/ws/sync` 受信上限（`65,536` bytes, 超過時 WS `1009 MessageTooBig`）を実装（超過時は新 wire error を増やさず切断）。
+
 - 日付・端末・OS・Unity／ブラウザの版：
 - 場面・ブロック数・変えた設定：
 - 試す前の予想：

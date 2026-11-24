@@ -170,4 +170,47 @@ public class DisplaySyncServerTests
         Assert.Equal("stream-42", reconnectSnapshot["activeStream"]!["streamId"]!.Value<string>());
         await ws2.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", cts.Token);
     }
+
+    [Fact]
+    public async Task WebSocketSyncOversizedMessageClosesWithMessageTooBigWhileAcceptingNormalMessages()
+    {
+        var limits = new SandboxConnectionLimits();
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            Limits = limits
+        });
+
+        await app.StartAsync();
+        string httpUrl = app.Urls.First();
+        var wsBase = httpUrl.Replace("http://", "ws://", StringComparison.Ordinal);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        using var wsNormal = new ClientWebSocket();
+        await wsNormal.ConnectAsync(new Uri(wsBase + "/ws/sync?viewerId=viewer-normal-size"), cts.Token);
+        Assert.Equal("snapshot", (await ReceiveJsonAsync(wsNormal, cts.Token))["type"]!.Value<string>());
+
+        using var wsBig = new ClientWebSocket();
+        await wsBig.ConnectAsync(new Uri(wsBase + "/ws/sync?viewerId=viewer-oversized"), cts.Token);
+        Assert.Equal("snapshot", (await ReceiveJsonAsync(wsBig, cts.Token))["type"]!.Value<string>());
+
+        // Normal resync still works on wsBig before sending an oversized frame
+        await SendJsonAsync(wsBig, new JObject { ["type"] = "resync", ["viewerId"] = "viewer-oversized" }, cts.Token);
+        Assert.Equal("snapshot", (await ReceiveJsonAsync(wsBig, cts.Token))["type"]!.Value<string>());
+
+        // 65,537 bytes exceeds MaxWebSocketMessageBytes (65,536) -> WebSocket Close 1009 (MessageTooBig)
+        byte[] oversized = new byte[limits.MaxWebSocketMessageBytes + 1];
+        Array.Fill(oversized, (byte)'x');
+        await wsBig.SendAsync(new ArraySegment<byte>(oversized), WebSocketMessageType.Text, true, cts.Token);
+
+        var recvBuf = new byte[4096];
+        var result = await wsBig.ReceiveAsync(new ArraySegment<byte>(recvBuf), cts.Token);
+        Assert.Equal(WebSocketMessageType.Close, result.MessageType);
+        Assert.Equal(WebSocketCloseStatus.MessageTooBig, result.CloseStatus);
+
+        // Existing normal viewer connection remains unaffected
+        await SendJsonAsync(wsNormal, new JObject { ["type"] = "resync", ["viewerId"] = "viewer-normal-size" }, cts.Token);
+        Assert.Equal("snapshot", (await ReceiveJsonAsync(wsNormal, cts.Token))["type"]!.Value<string>());
+        await wsNormal.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", cts.Token);
+    }
 }

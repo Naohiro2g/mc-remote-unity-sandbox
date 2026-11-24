@@ -7,6 +7,30 @@ using Microsoft.Extensions.FileProviders;
 
 namespace Code2Create.UnitySandbox.Server;
 
+/// <summary>
+/// Server-side connection, pairing, and frame-size resource limits aligned with McRemote (2026-10-07-02 / 2026-11-20-04).
+/// </summary>
+public sealed class SandboxConnectionLimits
+{
+    public int MaxTotalTcpConnections { get; init; } = 64;
+    public int MaxPreHelloTcpConnections { get; init; } = 32;
+    public int MaxPerIpTcpConnections { get; init; } = 32;
+    public TimeSpan PreHelloIdleTimeout { get; init; } = TimeSpan.FromSeconds(30);
+    public TimeSpan PreHelloDeadline { get; init; } = TimeSpan.FromSeconds(180);
+    public bool EnableTcpKeepAlive { get; init; } = true;
+    public int TcpKeepAliveTimeSeconds { get; init; } = 60;
+    public int TcpKeepAliveIntervalSeconds { get; init; } = 30;
+    public int TcpKeepAliveRetryCount { get; init; } = 8;
+    public int MaxPairBeginPerIpPerMinute { get; init; } = 20;
+    public int MaxPairBeginGlobalPerSecond { get; init; } = 20;
+    public int MaxPairBeginGlobalPerMinute { get; init; } = 120;
+    public int MaxPendingPairCodes { get; init; } = 128;
+    public TimeSpan ExpiredPairRetentionGrace { get; init; } = TimeSpan.FromSeconds(60);
+    public int MaxTotalPairEntries { get; init; } = 256;
+    public int MaxTcpLineBytes { get; init; } = 65_536;
+    public int MaxWebSocketMessageBytes { get; init; } = 65_536;
+}
+
 public sealed class SandboxServerOptions
 {
     public string ListenUrl { get; init; } = "http://127.0.0.1:5080";
@@ -17,6 +41,7 @@ public sealed class SandboxServerOptions
     public bool AuthEnforcement { get; init; } = true;
     public string ServerName { get; init; } = WorldConstants.DefaultServerName;
     public string ServerVersion { get; init; } = WorldConstants.ResolveServerVersion();
+    public SandboxConnectionLimits Limits { get; init; } = new SandboxConnectionLimits();
 }
 
 public static class SandboxServerApp
@@ -24,6 +49,7 @@ public static class SandboxServerApp
     public static WebApplication Build(SandboxServerOptions? options = null)
     {
         options ??= new SandboxServerOptions();
+        SandboxConnectionLimits limits = options.Limits ?? new SandboxConnectionLimits();
         if (!IPAddress.TryParse(options.TcpListenHost, out var tcpAddress))
         {
             throw new ArgumentException($"Invalid TcpListenHost: '{options.TcpListenHost}'.", nameof(options));
@@ -34,18 +60,27 @@ public static class SandboxServerApp
         builder.Logging.ClearProviders();
         builder.Logging.AddConsole();
 
+        builder.Services.AddSingleton(limits);
         builder.Services.AddSingleton<SandboxWorld>(_ => new SandboxWorld());
         builder.Services.AddSingleton<IViewerStreamBindingStore, InMemoryViewerStreamBindingStore>();
         builder.Services.AddSingleton<ISandboxTokenStore, InMemorySandboxTokenStore>();
-        builder.Services.AddSingleton<IPairingApprovalStore, InMemoryPairingApprovalStore>();
+        builder.Services.AddSingleton<IPairingApprovalStore>(_ => new InMemoryPairingApprovalStore(
+            limits.MaxPendingPairCodes,
+            limits.ExpiredPairRetentionGrace,
+            limits.MaxTotalPairEntries));
         builder.Services.AddSingleton(_ => new PairingRateLimiter());
+        builder.Services.AddSingleton(_ => new PairBeginRateLimiter(
+            limits.MaxPairBeginPerIpPerMinute,
+            limits.MaxPairBeginGlobalPerSecond,
+            limits.MaxPairBeginGlobalPerMinute));
         builder.Services.AddSingleton(sp => new DisplaySyncHub(
             sp.GetRequiredService<SandboxWorld>(),
             sp.GetRequiredService<IViewerStreamBindingStore>(),
             sp.GetRequiredService<IPairingApprovalStore>(),
             sp.GetRequiredService<PairingRateLimiter>(),
             options.Clock,
-            sp.GetRequiredService<ISandboxTokenStore>()));
+            sp.GetRequiredService<ISandboxTokenStore>(),
+            limits.MaxWebSocketMessageBytes));
         builder.Services.AddSingleton(sp => new TcpJsonRpcServer(
             sp.GetRequiredService<SandboxWorld>(),
             sp.GetRequiredService<IViewerStreamBindingStore>(),
@@ -57,7 +92,9 @@ public static class SandboxServerApp
             options.Clock,
             options.AuthEnforcement,
             options.ServerName,
-            serverVersion: options.ServerVersion));
+            serverVersion: options.ServerVersion,
+            limits: limits,
+            pairBeginRateLimiter: sp.GetRequiredService<PairBeginRateLimiter>()));
 
         var app = builder.Build();
         var tcpServer = app.Services.GetRequiredService<TcpJsonRpcServer>();

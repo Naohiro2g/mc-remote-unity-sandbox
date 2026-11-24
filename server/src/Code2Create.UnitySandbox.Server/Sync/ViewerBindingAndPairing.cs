@@ -318,6 +318,7 @@ namespace Code2Create.UnitySandbox.Server.Sync
     public interface IPairingApprovalStore
     {
         PairingBeginResult BeginPairing(string tokenType, string? device, DateTimeOffset now);
+        PairingBeginResult? TryBeginPairing(string tokenType, string? device, DateTimeOffset now);
         PairingPollResult PollPairing(string pairingId, DateTimeOffset now);
         PairingApprovalOutcome TryApproveCode(
             string pairCode,
@@ -334,9 +335,52 @@ namespace Code2Create.UnitySandbox.Server.Sync
         private readonly object gate = new object();
         private readonly Dictionary<string, PendingPairingEntry> byId = new Dictionary<string, PendingPairingEntry>(StringComparer.Ordinal);
         private readonly Dictionary<string, PendingPairingEntry> byDigits = new Dictionary<string, PendingPairingEntry>(StringComparer.Ordinal);
+        private readonly int maxPendingPairCodes;
+        private readonly TimeSpan expiredRetentionGrace;
+        private readonly int maxTotalEntries;
         private long streamCounter;
+        private long entryOrderCounter;
+
+        public InMemoryPairingApprovalStore(
+            int maxPendingPairCodes = 128,
+            TimeSpan? expiredRetentionGrace = null,
+            int maxTotalEntries = 256)
+        {
+            if (maxPendingPairCodes <= 0) throw new ArgumentOutOfRangeException(nameof(maxPendingPairCodes));
+            if (maxTotalEntries <= 0) throw new ArgumentOutOfRangeException(nameof(maxTotalEntries));
+
+            this.maxPendingPairCodes = maxPendingPairCodes;
+            this.expiredRetentionGrace = expiredRetentionGrace ?? TimeSpan.FromSeconds(60);
+            if (this.expiredRetentionGrace < TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(expiredRetentionGrace));
+            }
+            this.maxTotalEntries = maxTotalEntries;
+        }
+
+        public int PendingPairCodeCount
+        {
+            get
+            {
+                lock (gate) return byDigits.Count;
+            }
+        }
+
+        public int TrackedEntryCount
+        {
+            get
+            {
+                lock (gate) return byId.Count;
+            }
+        }
 
         public PairingBeginResult BeginPairing(string tokenType, string? device, DateTimeOffset now)
+        {
+            return TryBeginPairing(tokenType, device, now)
+                ?? throw new InvalidOperationException("Pending pair code capacity reached.");
+        }
+
+        public PairingBeginResult? TryBeginPairing(string tokenType, string? device, DateTimeOffset now)
         {
             if (tokenType != "session" && tokenType != "long_lived")
             {
@@ -345,12 +389,39 @@ namespace Code2Create.UnitySandbox.Server.Sync
 
             lock (gate)
             {
-                PurgeExpiredDigitsLocked(now);
+                PurgeLocked(now);
+                if (byDigits.Count >= maxPendingPairCodes)
+                {
+                    return null;
+                }
+
+                // Evict oldest already-expired (tombstone in grace) entries before rejecting on hard entry cap.
+                while (byId.Count >= maxTotalEntries)
+                {
+                    PendingPairingEntry? oldestExpired = null;
+                    foreach (var candidate in byId.Values)
+                    {
+                        if (candidate.ExpiresAt <= now &&
+                            (oldestExpired == null || candidate.CreatedOrder < oldestExpired.CreatedOrder))
+                        {
+                            oldestExpired = candidate;
+                        }
+                    }
+
+                    if (oldestExpired == null)
+                    {
+                        return null;
+                    }
+
+                    RemoveEntryByIdLocked(oldestExpired.PairingId);
+                }
+
                 string pairingId = "pair_" + Guid.NewGuid().ToString("N");
                 string digits = AllocateUniquePairDigitsLocked();
                 DateTimeOffset expiresAt = now.AddSeconds(WorldConstants.DefaultPairCodeTtlSeconds);
+                long order = Interlocked.Increment(ref entryOrderCounter);
 
-                var entry = new PendingPairingEntry(pairingId, digits, null, tokenType, device, expiresAt);
+                var entry = new PendingPairingEntry(pairingId, digits, null, tokenType, device, expiresAt, order);
                 byId[pairingId] = entry;
                 byDigits[digits] = entry;
                 return new PairingBeginResult(pairingId, digits, WorldConstants.DefaultPairCodeTtlSeconds);
@@ -366,6 +437,7 @@ namespace Code2Create.UnitySandbox.Server.Sync
 
             lock (gate)
             {
+                PurgeLocked(now);
                 if (!byId.TryGetValue(pairingId, out var entry))
                 {
                     return PairingPollResult.NotFound();
@@ -379,11 +451,7 @@ namespace Code2Create.UnitySandbox.Server.Sync
 
                 if (entry.ExpiresAt <= now)
                 {
-                    byId.Remove(pairingId);
-                    if (byDigits.TryGetValue(entry.PairDigits, out var current) && ReferenceEquals(current, entry))
-                    {
-                        byDigits.Remove(entry.PairDigits);
-                    }
+                    RemoveEntryByIdLocked(pairingId);
                     return PairingPollResult.Expired();
                 }
 
@@ -410,6 +478,7 @@ namespace Code2Create.UnitySandbox.Server.Sync
 
             lock (gate)
             {
+                PurgeLocked(now);
                 if (!byDigits.TryGetValue(digits, out var entry))
                 {
                     return PairingApprovalOutcome.Failure("invalid_pair_code");
@@ -450,7 +519,8 @@ namespace Code2Create.UnitySandbox.Server.Sync
             lock (gate)
             {
                 string pairingId = "pair_" + Guid.NewGuid().ToString("N");
-                var entry = new PendingPairingEntry(pairingId, digits, streamId, "session", null, expiresAt);
+                long order = Interlocked.Increment(ref entryOrderCounter);
+                var entry = new PendingPairingEntry(pairingId, digits, streamId, "session", null, expiresAt, order);
                 byId[pairingId] = entry;
                 byDigits[digits] = entry;
             }
@@ -466,6 +536,7 @@ namespace Code2Create.UnitySandbox.Server.Sync
 
             lock (gate)
             {
+                PurgeLocked(now);
                 if (!byDigits.TryGetValue(digits, out var entry))
                 {
                     return PairingApprovalOutcome.Failure("invalid_pair_code");
@@ -494,13 +565,37 @@ namespace Code2Create.UnitySandbox.Server.Sync
             throw new InvalidOperationException("Failed to allocate unique pair_code.");
         }
 
-        private void PurgeExpiredDigitsLocked(DateTimeOffset now)
+        private void RemoveEntryByIdLocked(string pairingId)
         {
-            if (byDigits.Count == 0) return;
-            var expiredKeys = byDigits.Where(kv => kv.Value.ExpiresAt <= now).Select(kv => kv.Key).ToArray();
-            foreach (var key in expiredKeys)
+            if (byId.Remove(pairingId, out var entry) &&
+                byDigits.TryGetValue(entry.PairDigits, out var current) &&
+                ReferenceEquals(current, entry))
             {
-                byDigits.Remove(key);
+                byDigits.Remove(entry.PairDigits);
+            }
+        }
+
+        private void PurgeLocked(DateTimeOffset now)
+        {
+            if (byDigits.Count > 0)
+            {
+                var expiredKeys = byDigits.Where(kv => kv.Value.ExpiresAt <= now).Select(kv => kv.Key).ToArray();
+                foreach (var key in expiredKeys)
+                {
+                    byDigits.Remove(key);
+                }
+            }
+
+            if (byId.Count > 0)
+            {
+                var purgedIds = byId
+                    .Where(kv => kv.Value.ExpiresAt + expiredRetentionGrace <= now)
+                    .Select(kv => kv.Key)
+                    .ToArray();
+                foreach (var pairingId in purgedIds)
+                {
+                    RemoveEntryByIdLocked(pairingId);
+                }
             }
         }
 
@@ -528,6 +623,7 @@ namespace Code2Create.UnitySandbox.Server.Sync
             public string TokenType { get; }
             public string? Device { get; }
             public DateTimeOffset ExpiresAt { get; }
+            public long CreatedOrder { get; }
             public string? ApprovedToken { get; set; }
 
             public PendingPairingEntry(
@@ -536,7 +632,8 @@ namespace Code2Create.UnitySandbox.Server.Sync
                 string? explicitStreamId,
                 string tokenType,
                 string? device,
-                DateTimeOffset expiresAt)
+                DateTimeOffset expiresAt,
+                long createdOrder)
             {
                 PairingId = pairingId;
                 PairDigits = pairDigits;
@@ -544,6 +641,7 @@ namespace Code2Create.UnitySandbox.Server.Sync
                 TokenType = tokenType;
                 Device = device;
                 ExpiresAt = expiresAt;
+                CreatedOrder = createdOrder;
             }
         }
     }
@@ -628,6 +726,111 @@ namespace Code2Create.UnitySandbox.Server.Sync
         private void PruneLocked(Queue<DateTimeOffset> queue, DateTimeOffset now)
         {
             DateTimeOffset cutoff = now - window;
+            while (queue.Count > 0 && queue.Peek() <= cutoff)
+            {
+                queue.Dequeue();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sliding-window rate limiter for pre-hello auth.pairBegin calls (per source IP and global).
+    /// </summary>
+    public sealed class PairBeginRateLimiter
+    {
+        private static readonly TimeSpan SecondWindow = TimeSpan.FromSeconds(1);
+        private static readonly TimeSpan MinuteWindow = TimeSpan.FromMinutes(1);
+
+        private readonly object gate = new object();
+        private readonly int maxPerIpPerMinute;
+        private readonly int maxGlobalPerSecond;
+        private readonly int maxGlobalPerMinute;
+        private readonly Queue<DateTimeOffset> globalSecond = new Queue<DateTimeOffset>();
+        private readonly Queue<DateTimeOffset> globalMinute = new Queue<DateTimeOffset>();
+        private readonly Dictionary<string, Queue<DateTimeOffset>> perIp = new Dictionary<string, Queue<DateTimeOffset>>(StringComparer.Ordinal);
+
+        public PairBeginRateLimiter(
+            int maxPerIpPerMinute = 20,
+            int maxGlobalPerSecond = 20,
+            int maxGlobalPerMinute = 120)
+        {
+            if (maxPerIpPerMinute <= 0) throw new ArgumentOutOfRangeException(nameof(maxPerIpPerMinute));
+            if (maxGlobalPerSecond <= 0) throw new ArgumentOutOfRangeException(nameof(maxGlobalPerSecond));
+            if (maxGlobalPerMinute <= 0) throw new ArgumentOutOfRangeException(nameof(maxGlobalPerMinute));
+
+            this.maxPerIpPerMinute = maxPerIpPerMinute;
+            this.maxGlobalPerSecond = maxGlobalPerSecond;
+            this.maxGlobalPerMinute = maxGlobalPerMinute;
+        }
+
+        public int TrackedIpCount
+        {
+            get
+            {
+                lock (gate) return perIp.Count;
+            }
+        }
+
+        public bool TryAcquire(string? remoteIpKey, DateTimeOffset now)
+        {
+            string ipKey = string.IsNullOrEmpty(remoteIpKey) ? "unknown" : remoteIpKey;
+
+            lock (gate)
+            {
+                PruneQueueLocked(globalSecond, now - SecondWindow);
+                PruneQueueLocked(globalMinute, now - MinuteWindow);
+
+                Queue<DateTimeOffset>? ipQueue = null;
+                if (perIp.TryGetValue(ipKey, out var existing))
+                {
+                    PruneQueueLocked(existing, now - MinuteWindow);
+                    if (existing.Count == 0)
+                    {
+                        perIp.Remove(ipKey);
+                    }
+                    else
+                    {
+                        ipQueue = existing;
+                    }
+                }
+
+                if (perIp.Count > 512)
+                {
+                    DateTimeOffset minuteCutoff = now - MinuteWindow;
+                    var emptyKeys = new List<string>();
+                    foreach (var kv in perIp)
+                    {
+                        PruneQueueLocked(kv.Value, minuteCutoff);
+                        if (kv.Value.Count == 0) emptyKeys.Add(kv.Key);
+                    }
+                    foreach (var k in emptyKeys)
+                    {
+                        perIp.Remove(k);
+                    }
+                }
+
+                if (globalSecond.Count >= maxGlobalPerSecond ||
+                    globalMinute.Count >= maxGlobalPerMinute ||
+                    (ipQueue != null && ipQueue.Count >= maxPerIpPerMinute))
+                {
+                    return false;
+                }
+
+                if (ipQueue == null)
+                {
+                    ipQueue = new Queue<DateTimeOffset>();
+                    perIp[ipKey] = ipQueue;
+                }
+
+                globalSecond.Enqueue(now);
+                globalMinute.Enqueue(now);
+                ipQueue.Enqueue(now);
+                return true;
+            }
+        }
+
+        private static void PruneQueueLocked(Queue<DateTimeOffset> queue, DateTimeOffset cutoff)
+        {
             while (queue.Count > 0 && queue.Peek() <= cutoff)
             {
                 queue.Dequeue();

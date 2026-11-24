@@ -1,4 +1,4 @@
-ARG SANDBOX_VERSION=0.1.0
+ARG SANDBOX_VERSION=2321.2.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 ARG WEBGL_DIST=unity/Builds/WebGL
@@ -10,12 +10,15 @@ WORKDIR /src
 COPY VERSION ./VERSION
 COPY server/ ./server/
 
-RUN dotnet restore server/src/Code2Create.UnitySandbox.Server/Code2Create.UnitySandbox.Server.csproj \
+RUN VERSION_PREFIX="$(printf '%s' "${SANDBOX_VERSION}" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')" \
+    && dotnet restore server/src/Code2Create.UnitySandbox.Server/Code2Create.UnitySandbox.Server.csproj \
     && dotnet publish server/src/Code2Create.UnitySandbox.Server/Code2Create.UnitySandbox.Server.csproj \
         -c Release \
         --no-restore \
         -o /app/publish \
-        "/p:Version=${SANDBOX_VERSION}"
+        "/p:VersionPrefix=${VERSION_PREFIX}" \
+        "/p:InformationalVersion=${SANDBOX_VERSION}" \
+        "/p:IncludeSourceRevisionInInformationalVersion=false"
 
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 ARG SANDBOX_VERSION
@@ -36,8 +39,13 @@ ENV UNITY_SANDBOX_VERSION="${SANDBOX_VERSION}" \
     ASPNETCORE_URLS="http://0.0.0.0:8080"
 
 WORKDIR /app
+COPY LICENSE ./LICENSE
+COPY THIRD-PARTY-NOTICES.txt ./THIRD-PARTY-NOTICES.txt
 COPY --from=build /app/publish/ ./
 COPY ${WEBGL_DIST}/ ./wwwroot/
+COPY THIRD-PARTY-NOTICES.txt ./wwwroot/THIRD-PARTY-NOTICES.txt
+
+USER $APP_UID
 
 EXPOSE 8080/tcp 25585/tcp
 

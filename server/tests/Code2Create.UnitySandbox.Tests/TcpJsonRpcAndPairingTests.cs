@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -46,9 +48,12 @@ public class TcpJsonRpcAndPairingTests
             };
         }
 
-        public static async Task<TcpRpcClient> ConnectAsync(int port, CancellationToken ct)
+        public static async Task<TcpRpcClient> ConnectAsync(int port, CancellationToken ct, string? localIp = null)
         {
-            var client = new TcpClient { NoDelay = true };
+            TcpClient client = string.IsNullOrEmpty(localIp)
+                ? new TcpClient()
+                : new TcpClient(new IPEndPoint(IPAddress.Parse(localIp), 0));
+            client.NoDelay = true;
             await client.ConnectAsync("127.0.0.1", port, ct);
             return new TcpRpcClient(client);
         }
@@ -70,6 +75,62 @@ public class TcpJsonRpcAndPairingTests
             return JObject.Parse(line!);
         }
 
+        public async Task<string?> TryCallRawAsync(object id, string method, JToken paramsToken, CancellationToken ct)
+        {
+            var req = new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = JToken.FromObject(id),
+                ["method"] = method,
+                ["params"] = paramsToken
+            };
+            try
+            {
+                await writer.WriteLineAsync(req.ToString(Formatting.None).AsMemory(), ct);
+                await writer.FlushAsync(ct);
+                return await reader.ReadLineAsync(ct);
+            }
+            catch (IOException)
+            {
+                return null;
+            }
+            catch (SocketException)
+            {
+                return null;
+            }
+        }
+
+        public async Task SendRawBytesAndExpectCloseWithoutResponseAsync(byte[] rawBytes, CancellationToken ct)
+        {
+            var stream = client.GetStream();
+            try
+            {
+                await stream.WriteAsync(rawBytes, 0, rawBytes.Length, ct);
+                await stream.FlushAsync(ct);
+            }
+            catch (IOException)
+            {
+                return;
+            }
+            catch (SocketException)
+            {
+                return;
+            }
+
+            byte[] probe = new byte[128];
+            try
+            {
+                int n = await stream.ReadAsync(probe, 0, probe.Length, ct);
+                Assert.Equal(0, n);
+            }
+            catch (IOException)
+            {
+            }
+            catch (SocketException)
+            {
+            }
+        }
+
         public async Task NotifyAsync(string method, JToken paramsToken, CancellationToken ct)
         {
             var req = new JObject
@@ -84,8 +145,17 @@ public class TcpJsonRpcAndPairingTests
 
         public async Task ExpectEofAsync(CancellationToken ct)
         {
-            string? next = await reader.ReadLineAsync(ct);
-            Assert.Null(next);
+            try
+            {
+                string? next = await reader.ReadLineAsync(ct);
+                Assert.Null(next);
+            }
+            catch (IOException)
+            {
+            }
+            catch (SocketException)
+            {
+            }
         }
 
         public void Dispose()
@@ -285,10 +355,12 @@ public class TcpJsonRpcAndPairingTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
-        // Verify /healthz advertises tcpPort
+        // Verify /healthz advertises version, protocol, and tcpPort
         using (var http = new HttpClient())
         {
             var health = JObject.Parse(await http.GetStringAsync(httpUrl + "/healthz", cts.Token));
+            Assert.Equal("2321.2.0", health["version"]!.Value<string>());
+            Assert.Equal("23.3.0", health["protocol"]!.Value<string>());
             Assert.Equal(tcpPort, health["tcpPort"]!.Value<int>());
         }
 
@@ -1033,6 +1105,172 @@ public class TcpJsonRpcAndPairingTests
         await wsStranger.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", cts.Token);
     }
 
+    [Fact]
+    public async Task CardinalYawAndDirectionVectorsMatchMcRemoteSpec()
+    {
+        var clock = new TestClock();
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            Clock = () => clock.UtcNow
+        });
+
+        await app.StartAsync();
+        string httpUrl = app.Urls.First();
+        int tcpPort = app.Services.GetRequiredService<TcpJsonRpcServer>().BoundPort;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        using var ws = new ClientWebSocket();
+        await ws.ConnectAsync(new Uri(httpUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/ws/sync?viewerId=viewer-cardinal-01"), cts.Token);
+        _ = await ReceiveWsJsonAsync(ws, cts.Token); // snapshot
+
+        string token = await PairViewerAndGetTokenAsync(tcpPort, ws, "viewer-cardinal-01", "session", cts.Token);
+        using var rpc = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
+        var helloResp = await rpc.CallAsync(1, "hello", new JObject
+        {
+            ["protocol"] = WorldConstants.ProtocolVersion,
+            ["auth"] = new JObject { ["token"] = token }
+        }, cts.Token);
+        Assert.Null(helloResp["error"]);
+        Assert.Equal("streamUpdated", (await ReceiveWsJsonAsync(ws, cts.Token))["type"]!.Value<string>());
+
+        // Unsynced initial server pose defaults to North-facing spawn (-180 deg yaw -> [0, 0, -1])
+        var initPose = await rpc.CallAsync(2, "player.getPose", new JArray(), cts.Token);
+        Assert.Equal(-180.0, initPose["result"]!["yaw"]!.Value<double>());
+        Assert.Equal(8.0, initPose["result"]!["pitch"]!.Value<double>());
+        Assert.Equal(new[] { 100.5, 63.04, 114.5 }, initPose["result"]!["pos"]!.ToObject<double[]>());
+
+        var cardinal = new (double yaw, double pitch, double[] dir)[]
+        {
+            (-180.0, 0.0, new[] { 0.0, 0.0, -1.0 }), // North
+            (-90.0,  0.0, new[] { 1.0, 0.0, 0.0 }),  // East
+            (0.0,    0.0, new[] { 0.0, 0.0, 1.0 }),  // South
+            (90.0,   0.0, new[] { -1.0, 0.0, 0.0 })  // West
+        };
+
+        int nextId = 10;
+        foreach (var c in cardinal)
+        {
+            var poseResp = await rpc.CallAsync(nextId++, "player.setPose",
+                new JArray("overworld", 0.5, 64.0, 0.5, c.yaw, c.pitch), cts.Token);
+            Assert.Equal(c.yaw, poseResp["result"]!["yaw"]!.Value<double>());
+            Assert.Equal(c.pitch, poseResp["result"]!["pitch"]!.Value<double>());
+            _ = await ReceiveWsJsonAsync(ws, cts.Token);
+
+            var dirResp = await rpc.CallAsync(nextId++, "player.getDirection", new JArray(), cts.Token);
+            var actualDir = dirResp["result"]!.ToObject<double[]>()!;
+            Assert.Equal(3, actualDir.Length);
+            Assert.True(Math.Abs(actualDir[0] - c.dir[0]) < 1e-6);
+            Assert.True(Math.Abs(actualDir[1] - c.dir[1]) < 1e-6);
+            Assert.True(Math.Abs(actualDir[2] - c.dir[2]) < 1e-6);
+
+            var setDirResp = await rpc.CallAsync(nextId++, "player.setDirection",
+                new JArray(c.dir[0], c.dir[1], c.dir[2]), cts.Token);
+            _ = await ReceiveWsJsonAsync(ws, cts.Token);
+            var getPoseAfterDir = await rpc.CallAsync(nextId++, "player.getPose", new JArray(), cts.Token);
+            Assert.Equal(c.yaw, getPoseAfterDir["result"]!["yaw"]!.Value<double>());
+            var setDirArr = setDirResp["result"]!.ToObject<double[]>()!;
+            Assert.True(Math.Abs(setDirArr[0] - c.dir[0]) < 1e-6);
+            Assert.True(Math.Abs(setDirArr[1] - c.dir[1]) < 1e-6);
+            Assert.True(Math.Abs(setDirArr[2] - c.dir[2]) < 1e-6);
+        }
+
+        // Yaw 180 canonicalizes to -180 (North)
+        var northAlias = await rpc.CallAsync(nextId++, "player.setPose", new JArray("overworld", 0.5, 64.0, 0.5, 180.0, 0.0), cts.Token);
+        Assert.Equal(-180.0, northAlias["result"]!["yaw"]!.Value<double>());
+        _ = await ReceiveWsJsonAsync(ws, cts.Token);
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", cts.Token);
+    }
+
+    [Fact]
+    public async Task CrossHostWebSocketIpAndTcpLocalhostPairingSucceeds()
+    {
+        var clock = new TestClock();
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            Clock = () => clock.UtcNow
+        });
+
+        await app.StartAsync();
+        string httpUrl = app.Urls.First(); // http://127.0.0.1:<port>
+        int tcpPort = app.Services.GetRequiredService<TcpJsonRpcServer>().BoundPort;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        // Unity Web connects using explicit IPv4 loopback URL
+        using var ws = new ClientWebSocket();
+        await ws.ConnectAsync(new Uri(httpUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/ws/sync?viewerId=viewer-cross-host"), cts.Token);
+        _ = await ReceiveWsJsonAsync(ws, cts.Token);
+
+        // Bridge/RPC client resolves "localhost" separately over TCP
+        using var beginClient = new TcpClient { NoDelay = true };
+        await beginClient.ConnectAsync("localhost", tcpPort, cts.Token);
+        string pairingId;
+        string digits;
+        using (var beginStream = beginClient.GetStream())
+        using (var reader = new StreamReader(beginStream, new UTF8Encoding(false), false, 8192, true))
+        using (var writer = new StreamWriter(beginStream, new UTF8Encoding(false), 8192, true) { NewLine = "\n", AutoFlush = true })
+        {
+            await writer.WriteLineAsync(new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = 1,
+                ["method"] = "auth.pairBegin",
+                ["params"] = new JObject { ["token_type"] = "session" }
+            }.ToString(Formatting.None));
+            var beginResp = JObject.Parse((await reader.ReadLineAsync(cts.Token))!);
+            pairingId = beginResp["result"]!["pairing_id"]!.Value<string>()!;
+            digits = beginResp["result"]!["pair_code"]!.Value<string>()!;
+        }
+
+        await SendWsJsonAsync(ws, new JObject
+        {
+            ["type"] = "chat",
+            ["viewerId"] = "viewer-cross-host",
+            ["message"] = "/mcremote pair " + digits
+        }, cts.Token);
+        var pairResult = await ReceiveWsJsonAsync(ws, cts.Token);
+        Assert.True(pairResult["approved"]!.Value<bool>());
+        _ = await ReceiveWsJsonAsync(ws, cts.Token); // streamUpdated
+
+        using var pollClient = new TcpClient { NoDelay = true };
+        await pollClient.ConnectAsync("localhost", tcpPort, cts.Token);
+        using (var pollStream = pollClient.GetStream())
+        using (var reader = new StreamReader(pollStream, new UTF8Encoding(false), false, 8192, true))
+        using (var writer = new StreamWriter(pollStream, new UTF8Encoding(false), 8192, true) { NewLine = "\n", AutoFlush = true })
+        {
+            await writer.WriteLineAsync(new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = 2,
+                ["method"] = "auth.pairPoll",
+                ["params"] = new JObject { ["pairing_id"] = pairingId }
+            }.ToString(Formatting.None));
+            var pollResp = JObject.Parse((await reader.ReadLineAsync(cts.Token))!);
+            Assert.Equal("ok", pollResp["result"]!["status"]!.Value<string>());
+            string issuedToken = pollResp["result"]!["token"]!.Value<string>()!;
+
+            await writer.WriteLineAsync(new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = 3,
+                ["method"] = "hello",
+                ["params"] = new JObject
+                {
+                    ["protocol"] = WorldConstants.ProtocolVersion,
+                    ["auth"] = new JObject { ["token"] = issuedToken }
+                }
+            }.ToString(Formatting.None));
+            var helloResp = JObject.Parse((await reader.ReadLineAsync(cts.Token))!);
+            Assert.Null(helloResp["error"]);
+        }
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", cts.Token);
+    }
+
     private static async Task<string> PairViewerAndGetTokenAsync(
         int tcpPort,
         ClientWebSocket viewerWs,
@@ -1061,5 +1299,593 @@ public class TcpJsonRpcAndPairingTests
         using var pairPollRpc = await TcpRpcClient.ConnectAsync(tcpPort, ct);
         var pollResp = await pairPollRpc.CallAsync(1, "auth.pairPoll", new JObject { ["pairing_id"] = pairingId }, ct);
         return pollResp["result"]!["token"]!.Value<string>()!;
+    }
+
+    [Fact]
+    public void DefaultConnectionLimitsMatchApprovedProductionValues()
+    {
+        var limits = new SandboxConnectionLimits();
+        Assert.Equal(64, limits.MaxTotalTcpConnections);
+        Assert.Equal(32, limits.MaxPreHelloTcpConnections);
+        Assert.Equal(32, limits.MaxPerIpTcpConnections);
+        Assert.Equal(TimeSpan.FromSeconds(30), limits.PreHelloIdleTimeout);
+        Assert.Equal(TimeSpan.FromSeconds(180), limits.PreHelloDeadline);
+        Assert.True(limits.EnableTcpKeepAlive);
+        Assert.Equal(60, limits.TcpKeepAliveTimeSeconds);
+        Assert.Equal(30, limits.TcpKeepAliveIntervalSeconds);
+        Assert.Equal(8, limits.TcpKeepAliveRetryCount);
+        Assert.Equal(20, limits.MaxPairBeginPerIpPerMinute);
+        Assert.Equal(20, limits.MaxPairBeginGlobalPerSecond);
+        Assert.Equal(120, limits.MaxPairBeginGlobalPerMinute);
+        Assert.Equal(128, limits.MaxPendingPairCodes);
+        Assert.Equal(TimeSpan.FromSeconds(60), limits.ExpiredPairRetentionGrace);
+        Assert.Equal(256, limits.MaxTotalPairEntries);
+        Assert.Equal(65_536, limits.MaxTcpLineBytes);
+        Assert.Equal(65_536, limits.MaxWebSocketMessageBytes);
+    }
+
+    [Fact]
+    public async Task TcpMaxTotalConnectionsClosesExcessConnectionAndRecoversSlotOnDisconnect()
+    {
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            Limits = new SandboxConnectionLimits
+            {
+                MaxTotalTcpConnections = 3,
+                MaxPreHelloTcpConnections = 32,
+                MaxPerIpTcpConnections = 32
+            }
+        });
+
+        await app.StartAsync();
+        var tcpServer = app.Services.GetRequiredService<TcpJsonRpcServer>();
+        int tcpPort = tcpServer.BoundPort;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var held = new List<TcpRpcClient>();
+        try
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                var c = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
+                var resp = await c.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+                Assert.NotNull(resp["result"]);
+                held.Add(c);
+            }
+            Assert.Equal(3, tcpServer.ActiveClientCount);
+
+            using (var excess = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
+            {
+                string? closed = await excess.TryCallRawAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+                Assert.Null(closed);
+            }
+
+            held[0].Dispose();
+            held.RemoveAt(0);
+            for (int w = 0; w < 80 && tcpServer.ActiveClientCount >= 3; w++)
+            {
+                await Task.Delay(25, cts.Token);
+            }
+            Assert.True(tcpServer.ActiveClientCount < 3);
+
+            using var recovered = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
+            var recResp = await recovered.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+            Assert.NotNull(recResp["result"]);
+        }
+        finally
+        {
+            foreach (var c in held) c.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task TcpMaxPreHelloConnectionsClosesExcessPreHelloWhileAllowingPromotionToPostHello()
+    {
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            AuthEnforcement = false,
+            Limits = new SandboxConnectionLimits
+            {
+                MaxTotalTcpConnections = 4,
+                MaxPreHelloTcpConnections = 2,
+                MaxPerIpTcpConnections = 4
+            }
+        });
+
+        await app.StartAsync();
+        var tcpServer = app.Services.GetRequiredService<TcpJsonRpcServer>();
+        int tcpPort = tcpServer.BoundPort;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        using var c1 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
+        Assert.NotNull((await c1.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+
+        using var c2 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
+        Assert.NotNull((await c2.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+        Assert.Equal(2, tcpServer.ActivePreHelloCount);
+
+        using (var c3 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
+        {
+            string? closed = await c3.TryCallRawAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+            Assert.Null(closed);
+        }
+
+        // Completing hello promotes c1 out of pre-hello quota
+        var helloResp = await c1.CallAsync(2, "hello", new JObject { ["protocol"] = WorldConstants.ProtocolVersion }, cts.Token);
+        Assert.Null(helloResp["error"]);
+        Assert.Equal(1, tcpServer.ActivePreHelloCount);
+        Assert.Equal(2, tcpServer.ActiveClientCount);
+
+        using var c4 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
+        Assert.NotNull((await c4.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+    }
+
+    [Fact]
+    public async Task TcpMaxPerIpConnectionsClosesExcessFromSameIpWhileAllowingOtherIp()
+    {
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            Limits = new SandboxConnectionLimits
+            {
+                MaxTotalTcpConnections = 4,
+                MaxPreHelloTcpConnections = 4,
+                MaxPerIpTcpConnections = 2
+            }
+        });
+
+        await app.StartAsync();
+        int tcpPort = app.Services.GetRequiredService<TcpJsonRpcServer>().BoundPort;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        using var c1 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.1");
+        Assert.NotNull((await c1.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+
+        using var c2 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.1");
+        Assert.NotNull((await c2.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+
+        // Third connection from 127.0.0.1 exceeds MaxPerIpTcpConnections = 2
+        using (var c3 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.1"))
+        {
+            string? closed = await c3.TryCallRawAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+            Assert.Null(closed);
+        }
+
+        // Connection from distinct source loopback 127.0.0.2 still succeeds
+        using var cOtherIp = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.2");
+        Assert.NotNull((await cOtherIp.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+    }
+
+    [Fact]
+    public async Task PreHelloIdleTimeoutClosesSilentConnectionWhilePostHelloStaysOpenAndEnablesKeepAlive()
+    {
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            AuthEnforcement = false,
+            Limits = new SandboxConnectionLimits
+            {
+                PreHelloIdleTimeout = TimeSpan.FromMilliseconds(200),
+                PreHelloDeadline = TimeSpan.FromSeconds(10),
+                EnableTcpKeepAlive = true,
+                TcpKeepAliveTimeSeconds = 60,
+                TcpKeepAliveIntervalSeconds = 30,
+                TcpKeepAliveRetryCount = 8
+            }
+        });
+
+        await app.StartAsync();
+        var tcpServer = app.Services.GetRequiredService<TcpJsonRpcServer>();
+        int tcpPort = tcpServer.BoundPort;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        using (var silent = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
+        {
+            await silent.ExpectEofAsync(cts.Token);
+        }
+
+        using var authed = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
+        var hello = await authed.CallAsync(1, "hello", new JObject { ["protocol"] = WorldConstants.ProtocolVersion }, cts.Token);
+        Assert.Null(hello["error"]);
+
+        Assert.True(tcpServer.TryGetAnyClientKeepAliveOption(out bool kaEnabled, out int? kaTime, out int? kaInterval, out int? kaRetry));
+        Assert.True(kaEnabled);
+        if (kaTime.HasValue) Assert.Equal(60, kaTime.Value);
+        if (kaInterval.HasValue) Assert.Equal(30, kaInterval.Value);
+        if (kaRetry.HasValue) Assert.Equal(8, kaRetry.Value);
+
+        await Task.Delay(450, cts.Token);
+        var flush = await authed.CallAsync(2, "connection.flush", new JArray(), cts.Token);
+        Assert.Null(flush["error"]);
+        Assert.Equal(JTokenType.Null, flush["result"]!.Type);
+    }
+
+    [Fact]
+    public async Task PreHelloDeadlineClosesConnectionEvenWhenPollingContinues()
+    {
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            Limits = new SandboxConnectionLimits
+            {
+                PreHelloIdleTimeout = TimeSpan.FromMilliseconds(400),
+                PreHelloDeadline = TimeSpan.FromMilliseconds(550)
+            }
+        });
+
+        await app.StartAsync();
+        int tcpPort = app.Services.GetRequiredService<TcpJsonRpcServer>().BoundPort;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        string pairingId;
+        using (var rpc = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
+        {
+            var begun = await rpc.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+            pairingId = begun["result"]!["pairing_id"]!.Value<string>()!;
+
+            bool closedDuringPolling = false;
+            int pendingCount = 0;
+            for (int i = 0; i < 15; i++)
+            {
+                await Task.Delay(120, cts.Token);
+                string? raw = await rpc.TryCallRawAsync(10 + i, "auth.pairPoll", new JObject { ["pairing_id"] = pairingId }, cts.Token);
+                if (raw == null)
+                {
+                    closedDuringPolling = true;
+                    break;
+                }
+                var obj = JObject.Parse(raw);
+                Assert.Equal("pending", obj["result"]!["status"]!.Value<string>());
+                pendingCount++;
+            }
+
+            Assert.True(pendingCount >= 1);
+            Assert.True(closedDuringPolling);
+        }
+
+        // Pending pairing survives pre-hello TCP deadline and continues on a new connection
+        using var freshRpc = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token);
+        var pollAfterReconnect = await freshRpc.CallAsync(1, "auth.pairPoll", new JObject { ["pairing_id"] = pairingId }, cts.Token);
+        Assert.Equal("pending", pollAfterReconnect["result"]!["status"]!.Value<string>());
+    }
+
+    [Fact]
+    public async Task PairBeginRateLimitsPerIpAndGlobalCloseConnectionWithoutErrorReason()
+    {
+        // Part A: Per-IP rate limit (3 / 60s) with distinct remote loopback and window recovery
+        var clockA = new TestClock();
+        await using (var appA = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            Clock = () => clockA.UtcNow,
+            Limits = new SandboxConnectionLimits
+            {
+                MaxPairBeginPerIpPerMinute = 3,
+                MaxPairBeginGlobalPerSecond = 20,
+                MaxPairBeginGlobalPerMinute = 20
+            }
+        }))
+        {
+            await appA.StartAsync();
+            int tcpPort = appA.Services.GetRequiredService<TcpJsonRpcServer>().BoundPort;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+            using (var rpcIp1 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.1"))
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    var ok = await rpcIp1.CallAsync(1 + i, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+                    Assert.NotNull(ok["result"]);
+                }
+
+                string? closed = await rpcIp1.TryCallRawAsync(10, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+                Assert.Null(closed);
+            }
+
+            // Different source IP is unaffected by 127.0.0.1 per-IP cap
+            using (var rpcIp2 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.2"))
+            {
+                var ok = await rpcIp2.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+                Assert.NotNull(ok["result"]);
+            }
+
+            // Advancing clock past 60s recovers per-IP quota
+            clockA.UtcNow = clockA.UtcNow.AddSeconds(61);
+            using (var rpcIp1Recovered = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.1"))
+            {
+                var ok = await rpcIp1Recovered.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+                Assert.NotNull(ok["result"]);
+            }
+        }
+
+        // Part B: Global per-second (2/s) and global per-minute (4/min) limits
+        var clockB = new TestClock();
+        await using (var appB = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            Clock = () => clockB.UtcNow,
+            Limits = new SandboxConnectionLimits
+            {
+                MaxPairBeginPerIpPerMinute = 20,
+                MaxPairBeginGlobalPerSecond = 2,
+                MaxPairBeginGlobalPerMinute = 4
+            }
+        }))
+        {
+            await appB.StartAsync();
+            int tcpPort = appB.Services.GetRequiredService<TcpJsonRpcServer>().BoundPort;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+            using (var r1 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.1"))
+            {
+                Assert.NotNull((await r1.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+            }
+            using (var r2 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.2"))
+            {
+                Assert.NotNull((await r2.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+            }
+            // 3rd call across another IP in same second hits global per-second cap (2/s)
+            using (var r3 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.3"))
+            {
+                Assert.Null(await r3.TryCallRawAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token));
+            }
+
+            clockB.UtcNow = clockB.UtcNow.AddSeconds(2);
+            using (var r4 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.3"))
+            {
+                Assert.NotNull((await r4.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+                Assert.NotNull((await r4.CallAsync(2, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+            }
+
+            // After 4 calls within 1 minute, another +2s still hits global per-minute cap (4/min)
+            clockB.UtcNow = clockB.UtcNow.AddSeconds(2);
+            using (var r5 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token, "127.0.0.4"))
+            {
+                Assert.Null(await r5.TryCallRawAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token));
+            }
+        }
+    }
+
+    [Fact]
+    public async Task MaxPendingPairCodesClosesExcessPairBeginUntilExpiredOrApproved()
+    {
+        var clock = new TestClock();
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            Clock = () => clock.UtcNow,
+            Limits = new SandboxConnectionLimits
+            {
+                MaxPendingPairCodes = 3,
+                MaxTotalPairEntries = 50,
+                MaxPairBeginPerIpPerMinute = 50,
+                MaxPairBeginGlobalPerSecond = 50,
+                MaxPairBeginGlobalPerMinute = 50
+            }
+        });
+
+        await app.StartAsync();
+        string httpUrl = app.Urls.First();
+        int tcpPort = app.Services.GetRequiredService<TcpJsonRpcServer>().BoundPort;
+        var pairingStore = Assert.IsType<InMemoryPairingApprovalStore>(app.Services.GetRequiredService<IPairingApprovalStore>());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        string firstCode;
+        using (var rpc = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
+        {
+            firstCode = (await rpc.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]!["pair_code"]!.Value<string>()!;
+            Assert.NotNull((await rpc.CallAsync(2, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+            Assert.NotNull((await rpc.CallAsync(3, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+            Assert.Equal(3, pairingStore.PendingPairCodeCount);
+
+            // 4th pending pairBegin exceeds MaxPendingPairCodes = 3 -> closes without JSON response
+            Assert.Null(await rpc.TryCallRawAsync(4, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token));
+        }
+
+        // Approving one code via WebSocket frees a pending slot
+        using var ws = new ClientWebSocket();
+        await ws.ConnectAsync(new Uri(httpUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/ws/sync?viewerId=viewer-cap-01"), cts.Token);
+        _ = await ReceiveWsJsonAsync(ws, cts.Token);
+
+        await SendWsJsonAsync(ws, new JObject
+        {
+            ["type"] = "chat",
+            ["viewerId"] = "viewer-cap-01",
+            ["message"] = "/mcremote pair " + firstCode
+        }, cts.Token);
+        Assert.True((await ReceiveWsJsonAsync(ws, cts.Token))["approved"]!.Value<bool>());
+        _ = await ReceiveWsJsonAsync(ws, cts.Token); // streamUpdated
+        Assert.Equal(2, pairingStore.PendingPairCodeCount);
+
+        using (var rpc2 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
+        {
+            Assert.NotNull((await rpc2.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+            Assert.Equal(3, pairingStore.PendingPairCodeCount);
+            Assert.Null(await rpc2.TryCallRawAsync(2, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token));
+        }
+
+        // Advancing clock past 120s purges expired codes
+        clock.UtcNow = clock.UtcNow.AddSeconds(120);
+        using (var rpc3 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
+        {
+            Assert.NotNull((await rpc3.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+            Assert.Equal(1, pairingStore.PendingPairCodeCount);
+        }
+
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", cts.Token);
+    }
+
+    [Fact]
+    public async Task UnpolledPairRecordsArePurgedAfterGraceAndBoundedByMaxTotalEntriesWhilePreservingPairExpired()
+    {
+        var clock = new TestClock();
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            Clock = () => clock.UtcNow,
+            Limits = new SandboxConnectionLimits
+            {
+                MaxPendingPairCodes = 128,
+                ExpiredPairRetentionGrace = TimeSpan.FromSeconds(60),
+                MaxTotalPairEntries = 4,
+                MaxPairBeginPerIpPerMinute = 50,
+                MaxPairBeginGlobalPerSecond = 50,
+                MaxPairBeginGlobalPerMinute = 50
+            }
+        });
+
+        await app.StartAsync();
+        int tcpPort = app.Services.GetRequiredService<TcpJsonRpcServer>().BoundPort;
+        var pairingStore = Assert.IsType<InMemoryPairingApprovalStore>(app.Services.GetRequiredService<IPairingApprovalStore>());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var initialIds = new List<string>();
+        using (var rpc = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                var r = await rpc.CallAsync(1 + i, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+                initialIds.Add(r["result"]!["pairing_id"]!.Value<string>()!);
+            }
+            Assert.Equal(4, pairingStore.TrackedEntryCount);
+
+            // Hard entry cap prevents creating a 5th active entry even below MaxPendingPairCodes (128)
+            Assert.Null(await rpc.TryCallRawAsync(10, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token));
+            Assert.Equal(4, pairingStore.TrackedEntryCount);
+        }
+
+        // At 120s (within +60s grace): polling returns pair_expired; creating new entries evicts oldest expired-in-grace to stay <= 4
+        clock.UtcNow = clock.UtcNow.AddSeconds(120);
+        using (var rpc2 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
+        {
+            var p0Resp = await rpc2.CallAsync(1, "auth.pairPoll", new JObject { ["pairing_id"] = initialIds[0] }, cts.Token);
+            Assert.Equal(-32000, p0Resp["error"]!["code"]!.Value<int>());
+            Assert.Equal("pair_expired", p0Resp["error"]!["data"]!["reason"]!.Value<string>());
+            Assert.Equal(3, pairingStore.TrackedEntryCount); // initialIds[1], [2], [3] remain unpolled
+
+            // Creates p5 (count 4), then p6 evicts oldest expired initialIds[1] (count stays 4)
+            Assert.NotNull((await rpc2.CallAsync(2, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+            Assert.NotNull((await rpc2.CallAsync(3, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token))["result"]);
+            Assert.Equal(4, pairingStore.TrackedEntryCount);
+
+            var evictedPoll = await rpc2.CallAsync(4, "auth.pairPoll", new JObject { ["pairing_id"] = initialIds[1] }, cts.Token);
+            Assert.Equal("pair_not_found", evictedPoll["error"]!["data"]!["reason"]!.Value<string>());
+            Assert.Equal(4, pairingStore.TrackedEntryCount); // initialIds[2], [3] (t=0, exp 120), p5, p6 (t=120, exp 240)
+        }
+
+        // Advance +61s (total t = 181s): initialIds[2], [3] passed 120s + 60s grace and are auto-purged when touched
+        clock.UtcNow = clock.UtcNow.AddSeconds(61);
+        using (var rpc3 = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
+        {
+            var triggerNew = await rpc3.CallAsync(1, "auth.pairBegin", new JObject { ["token_type"] = "session" }, cts.Token);
+            Assert.NotNull(triggerNew["result"]);
+            Assert.Equal(3, pairingStore.TrackedEntryCount); // Only p5, p6, and new trigger remain
+
+            var purgedPoll = await rpc3.CallAsync(2, "auth.pairPoll", new JObject { ["pairing_id"] = initialIds[2] }, cts.Token);
+            Assert.Equal("pair_not_found", purgedPoll["error"]!["data"]!["reason"]!.Value<string>());
+        }
+    }
+
+    [Fact]
+    public async Task TcpMaxLineBytesClosesConnectionPreAndPostHelloWhileAcceptingBoundaryLine()
+    {
+        const int limit = 1024;
+        await using var app = SandboxServerApp.Build(new SandboxServerOptions
+        {
+            ListenUrl = "http://127.0.0.1:0",
+            TcpListenPort = 0,
+            AuthEnforcement = false,
+            Limits = new SandboxConnectionLimits
+            {
+                MaxTcpLineBytes = limit
+            }
+        });
+
+        await app.StartAsync();
+        int tcpPort = app.Services.GetRequiredService<TcpJsonRpcServer>().BoundPort;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        static byte[] BuildExactLengthJsonLine(string method, JToken paramsToken, int exactLineBytes, string lineEnding)
+        {
+            var obj = new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = 1,
+                ["method"] = method,
+                ["params"] = paramsToken,
+                ["pad"] = string.Empty
+            };
+            int overhead = Encoding.UTF8.GetByteCount(obj.ToString(Formatting.None));
+            int padLen = exactLineBytes - overhead;
+            Assert.True(padLen >= 0);
+            obj["pad"] = new string('p', padLen);
+            string json = obj.ToString(Formatting.None);
+            Assert.Equal(exactLineBytes, Encoding.UTF8.GetByteCount(json));
+            return Encoding.UTF8.GetBytes(json + lineEnding);
+        }
+
+        // Pre-hello: exact 1024 bytes (+ CRLF) succeeds; 1025 bytes without LF closes connection immediately
+        {
+            byte[] line = BuildExactLengthJsonLine("auth.pairBegin", new JObject { ["token_type"] = "session" }, limit, "\r\n");
+            using var s = new TcpClient { NoDelay = true };
+            await s.ConnectAsync("127.0.0.1", tcpPort, cts.Token);
+            var stream = s.GetStream();
+            await stream.WriteAsync(line, 0, line.Length, cts.Token);
+            using var reader = new StreamReader(stream, new UTF8Encoding(false), false, 4096, leaveOpen: true);
+            var resp = JObject.Parse((await reader.ReadLineAsync(cts.Token))!);
+            Assert.NotNull(resp["result"]!["pairing_id"]);
+        }
+
+        using (var preOversized = await TcpRpcClient.ConnectAsync(tcpPort, cts.Token))
+        {
+            byte[] oversized = Encoding.UTF8.GetBytes(new string('a', limit + 1));
+            await preOversized.SendRawBytesAndExpectCloseWithoutResponseAsync(oversized, cts.Token);
+        }
+
+        // Post-hello: exact 1024 bytes succeeds; 1025 bytes without LF closes connection immediately
+        using (var postClient = new TcpClient { NoDelay = true })
+        {
+            await postClient.ConnectAsync("127.0.0.1", tcpPort, cts.Token);
+            var ns = postClient.GetStream();
+            using var writer = new StreamWriter(ns, new UTF8Encoding(false), 4096, leaveOpen: true) { NewLine = "\n", AutoFlush = true };
+            using var reader = new StreamReader(ns, new UTF8Encoding(false), false, 4096, leaveOpen: true);
+
+            await writer.WriteLineAsync(new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = 1,
+                ["method"] = "hello",
+                ["params"] = new JObject { ["protocol"] = WorldConstants.ProtocolVersion }
+            }.ToString(Formatting.None));
+            Assert.Null(JObject.Parse((await reader.ReadLineAsync(cts.Token))!)["error"]);
+
+            byte[] exactPost = BuildExactLengthJsonLine("chat.post", new JArray("hello exact"), limit, "\n");
+            await ns.WriteAsync(exactPost, 0, exactPost.Length, cts.Token);
+            var postOk = JObject.Parse((await reader.ReadLineAsync(cts.Token))!);
+            Assert.Null(postOk["error"]);
+
+            byte[] oversizedPost = Encoding.UTF8.GetBytes(new string('z', limit + 1));
+            await ns.WriteAsync(oversizedPost, 0, oversizedPost.Length, cts.Token);
+            byte[] probe = new byte[64];
+            try
+            {
+                int n = await ns.ReadAsync(probe, 0, probe.Length, cts.Token);
+                Assert.Equal(0, n);
+            }
+            catch (IOException)
+            {
+            }
+        }
     }
 }
