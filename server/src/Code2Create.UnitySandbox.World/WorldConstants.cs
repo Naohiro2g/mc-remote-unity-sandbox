@@ -9,15 +9,15 @@ namespace Code2Create.UnitySandbox.World
     /// </summary>
     public static class WorldConstants
     {
-        public const string ProtocolVersion = "23.3.0";
-        public const int ProtocolMajor = 23;
-        public const int ProtocolMinor = 3;
+        public const string ProtocolVersion = "24.0.0";
+        public const int ProtocolMajor = 24;
+        public const int ProtocolMinor = 0;
         public const int ProtocolPatch = 0;
 
         public const string McVersion = "1.21.11";
         public const string DefaultDimension = "minecraft:overworld";
         public const string DefaultServerName = "mc-remote-unity-sandbox";
-        public const string DefaultServerVersion = "2321.2.0";
+        public const string DefaultServerVersion = "2400.0.0";
         public const int DefaultTcpPort = 25585;
         public const int DefaultBuildRange = 1000;
         public const int DefaultPairCodeTtlSeconds = 120;

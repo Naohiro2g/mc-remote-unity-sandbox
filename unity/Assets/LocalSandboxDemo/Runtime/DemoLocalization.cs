@@ -152,8 +152,8 @@ namespace Code2Create.UnitySandbox.LocalDemo
 
         internal static string WelcomeMessage(DemoLanguage lang, string version)
             => lang == DemoLanguage.En
-                ? $"Welcome to Unity Sandbox! (v{version})"
-                : $"ようこそ、Unity箱庭へ！ (v{version})";
+                ? $"Welcome to the .NET Sandbox! (v{version})"
+                : $"ようこそ、.NET箱庭へ！ (v{version})";
 
         internal static string SnapshotReceivedMessage(DemoLanguage lang, int regionCount)
             => lang == DemoLanguage.En
