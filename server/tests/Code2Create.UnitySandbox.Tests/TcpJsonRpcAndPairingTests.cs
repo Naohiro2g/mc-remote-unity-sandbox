@@ -359,7 +359,7 @@ public class TcpJsonRpcAndPairingTests
         using (var http = new HttpClient())
         {
             var health = JObject.Parse(await http.GetStringAsync(httpUrl + "/healthz", cts.Token));
-            Assert.Equal("2400.0.0rc1", health["version"]!.Value<string>());
+            Assert.Equal("2400.0.0", health["version"]!.Value<string>());
             Assert.Equal("24.0.0", health["protocol"]!.Value<string>());
             Assert.Equal(tcpPort, health["tcpPort"]!.Value<int>());
         }

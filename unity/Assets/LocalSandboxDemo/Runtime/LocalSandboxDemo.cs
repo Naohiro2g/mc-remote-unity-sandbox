@@ -159,7 +159,7 @@ namespace Code2Create.UnitySandbox.LocalDemo
             CreateTargetOutline();
             RefreshTargetOutline();
 
-            string ver = string.IsNullOrEmpty(Application.version) ? "2400.0.0rc1" : Application.version;
+            string ver = string.IsNullOrEmpty(Application.version) ? "2400.0.0" : Application.version;
             AddChatLine(DemoText.WelcomeMessage(currentLang, ver));
         }
 
